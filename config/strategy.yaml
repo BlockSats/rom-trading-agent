@@ -1,0 +1,27 @@
+version: "0001"
+asset: "BTC/USDT"
+timeframe: "1h"
+
+entry:
+  indicator: "rsi"
+  threshold: 30
+  direction: "long"
+
+exit:
+  rsi_take_profit: 55
+
+risk:
+  stop_loss_pct: 2.0
+  position_size_pct: 10.0
+
+costs:
+  fee_pct: 0.10
+  slippage_pct: 0.05
+
+reflection:
+  one_variable_only: true
+  allowed_variables:
+    - entry.threshold
+    - exit.rsi_take_profit
+    - risk.stop_loss_pct
+    - risk.position_size_pct

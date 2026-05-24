@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+outputs/
+*.swp
+*.swo
+*.tmp
+*.bak
+*~
+
+*.egg-info/
