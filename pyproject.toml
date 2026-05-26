@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 trading-agent = "trading_agent.cli:app"
+tradebot = "trading_agent.cli:app"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
