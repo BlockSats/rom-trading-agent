@@ -24,15 +24,21 @@ def evaluate_rsi_signal(latest_rsi: float, strategy: dict[str, Any]) -> str:
     return "hold"
 
 
-def run_strategy_on_dataframe(df: pd.DataFrame, strategy: dict[str, Any]) -> list[dict[str, Any]]:
+def run_strategy_on_dataframe(
+    df: pd.DataFrame,
+    strategy: dict[str, Any],
+    initial_balance: float = 10000.0,
+) -> list[dict[str, Any]]:
     if "close" not in df.columns:
         raise ValueError("dataframe must contain a close column")
 
     closes = df["close"].astype(float).tolist()
     indicator = rsi(closes)
 
-    broker = PaperBroker(initial_balance=10000.0)
+    broker = PaperBroker(initial_balance=initial_balance)
     closed_trades: list[dict[str, Any]] = []
+    last_timestamp = None
+    last_close = None
 
     for index, row in df.reset_index(drop=True).iterrows():
         latest_rsi = indicator.iloc[index]
@@ -41,6 +47,8 @@ def run_strategy_on_dataframe(df: pd.DataFrame, strategy: dict[str, Any]) -> lis
 
         close_price = float(row["close"])
         timestamp = row["timestamp"] if "timestamp" in df.columns else None
+        last_timestamp = timestamp
+        last_close = close_price
         stop_loss_pct = float(strategy["risk"]["stop_loss_pct"])
         fee_pct = float(strategy["costs"]["fee_pct"])
         slippage_pct = float(strategy["costs"]["slippage_pct"])
@@ -62,17 +70,11 @@ def run_strategy_on_dataframe(df: pd.DataFrame, strategy: dict[str, Any]) -> lis
                 if timestamp is not None:
                     broker._entry_timestamp = timestamp  # type: ignore[attr-defined]
 
-    if broker.is_open and len(df):
-        final_row = df.reset_index(drop=True).iterrows()
-        last_index, last_row = None, None
-        for last_index, last_row in final_row:
-            pass
-        if last_row is not None:
-            final_close = float(last_row["close"])
-            trade = broker.sell(final_close, fee_pct=fee_pct, slippage_pct=slippage_pct)
-            trade["reason"] = "end_of_data"
-            if "timestamp" in df.columns:
-                trade["exit_timestamp"] = _serialize_timestamp(last_row["timestamp"])
-            closed_trades.append(trade)
+    if broker.is_open and last_close is not None:
+        trade = broker.sell(last_close, fee_pct=fee_pct, slippage_pct=slippage_pct)
+        trade["reason"] = "end_of_data"
+        if last_timestamp is not None:
+            trade["exit_timestamp"] = _serialize_timestamp(last_timestamp)
+        closed_trades.append(trade)
 
     return closed_trades

@@ -15,6 +15,23 @@ def append_jsonl(path: str | Path, record: dict[str, Any]) -> None:
         handle.write("\n")
 
 
+def write_json(path: str | Path, payload: Any) -> None:
+    file_path = Path(path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with file_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True, default=str)
+        handle.write("\n")
+
+
+def write_jsonl(path: str | Path, records: list[dict[str, Any]]) -> None:
+    file_path = Path(path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with file_path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, sort_keys=True, default=str))
+            handle.write("\n")
+
+
 def read_jsonl(path: str | Path) -> list[dict[str, Any]]:
     file_path = Path(path)
     if not file_path.exists():
@@ -70,4 +87,3 @@ def save_strategy_version(
 
     versioned_path.write_text(yaml.safe_dump(strategy, sort_keys=False), encoding="utf-8")
     return versioned_path
-

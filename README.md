@@ -23,8 +23,38 @@ trading-agent check
 trading-agent run-once
 trading-agent score
 trading-agent reflect
+trading-agent backtest-csv data/btc_usdt_1h.csv
 pytest
 ```
+
+## Phase 2 CSV Backtest
+
+Phase 2 adds a read-only historical backtest path for local CSV OHLCV files.
+
+Expected CSV columns:
+
+```text
+timestamp,open,high,low,close,volume
+```
+
+Rules:
+
+- `timestamp` is parsed as datetime.
+- `open`, `high`, `low`, `close`, and `volume` must be numeric.
+- Rows are sorted by timestamp ascending.
+- Duplicate timestamps are rejected.
+- Missing required columns raise `ValueError`.
+- Invalid OHLC values raise `ValueError`.
+- Gaps are reported as warnings, not hard failures.
+
+Example:
+
+```bash
+trading-agent backtest-csv data/btc_usdt_1h.csv
+```
+
+The CSV backtest writes `outputs/backtest_report.json` and `outputs/backtest_trades.jsonl` only.
+It does not modify `state/trades.jsonl`, strategy files, or strategy history.
 
 ## Repository Layout
 
@@ -44,6 +74,8 @@ tests/         Phase 1 tests
 - RSI indicator
 - Simple paper broker
 - One-pass strategy runner
+- Local CSV OHLCV loading
+- Deterministic historical backtesting
 - Append-only storage helpers
 - Deterministic scoring
 - Deterministic fallback reflection
@@ -60,4 +92,3 @@ tests/         Phase 1 tests
 - Hermes
 - Cloud deployment
 - LLM API calls
-
