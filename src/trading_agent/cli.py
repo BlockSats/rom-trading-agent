@@ -7,6 +7,7 @@ from typing import Any
 import typer
 import yaml
 
+from trading_agent.market_data.binance import fetch_binance_ohlcv, write_ohlcv_csv
 from trading_agent.backtest import run_backtest, summarize_backtest
 from trading_agent.config import load_goal, load_strategy, validate_goal, validate_strategy
 from trading_agent.data import detect_time_gaps, load_ohlcv_csv
@@ -124,6 +125,31 @@ def inspect_csv(path: Path) -> None:
 
     echo_json(report)
 
+@app.command("fetch-ohlcv")
+def fetch_ohlcv(
+    symbol: str = typer.Option("BTCUSDT", "--symbol", help="Binance symbol, e.g. BTCUSDT."),
+    interval: str = typer.Option("1h", "--interval", help="Binance interval, e.g. 1m, 5m, 1h, 1d."),
+    limit: int = typer.Option(500, "--limit", help="Number of candles to fetch. Binance max is 1000."),
+    output: Path = typer.Option(
+        Path("data/BTCUSDT_1h.csv"),
+        "--output",
+        "-o",
+        help="Output CSV path.",
+    ),
+) -> None:
+    """Fetch public OHLCV candles from Binance and save them as CSV."""
+    rows = fetch_binance_ohlcv(symbol=symbol, interval=interval, limit=limit)
+    output_path = write_ohlcv_csv(rows, output)
+
+    echo_json(
+        {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "limit": limit,
+            "rows": len(rows),
+            "output": str(output_path),
+        }
+    )
 
 @app.command("run-once")
 def run_once() -> None:

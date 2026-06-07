@@ -12,3 +12,5 @@ outputs/
 *~
 
 *.egg-info/
+
+data/*.csv
