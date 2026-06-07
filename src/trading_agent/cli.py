@@ -13,6 +13,7 @@ from trading_agent.config import load_goal, load_strategy, validate_goal, valida
 from trading_agent.data import detect_time_gaps, load_ohlcv_csv
 from trading_agent.loop import run_once as run_once_once
 from trading_agent.reflection import apply_reflection_proposal, propose_one_change
+from trading_agent.research_reflection import build_research_reflection_report
 from trading_agent.scoring import score_trades
 from trading_agent.storage import (
     append_jsonl,
@@ -167,8 +168,13 @@ def research_cycle(
         "--fail-on-gaps",
         help="Exit with code 1 if time gaps are detected.",
     ),
+    reflect: bool = typer.Option(
+        False,
+        "--reflect",
+        help="Run one controlled reflection hypothesis after the baseline cycle.",
+    ),
 ) -> None:
-    """Run a full research cycle: fetch, inspect, backtest, and score."""
+    """Run a full research cycle: fetch, inspect, backtest, score, and optionally reflect."""
     strategy = load_strategy()
     goal = load_goal()
 
@@ -221,6 +227,53 @@ def research_cycle(
     write_json(outputs_dir / "research_cycle_report.json", report)
     write_json(outputs_dir / "backtest_report.json", report)
     write_jsonl(outputs_dir / "backtest_trades.jsonl", backtest_result["trades"])
+
+    if reflect:
+        proposal = propose_one_change(strategy, score_result)
+        candidate_strategy = apply_reflection_proposal(strategy, proposal)
+
+        candidate_backtest_result = run_backtest(ohlcv, candidate_strategy)
+        candidate_score_result = score_trades(candidate_backtest_result["trades"], goal)
+        candidate_summary = summarize_backtest(
+            candidate_backtest_result["trades"],
+            candidate_score_result,
+        )
+
+        candidate_report = {
+            "command": "research-cycle",
+            "status": "completed",
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "limit": limit,
+            "csv_path": str(output_path),
+            "asset": candidate_strategy["asset"],
+            "timeframe": candidate_strategy["timeframe"],
+            "rows": int(len(ohlcv)),
+            "gaps_detected": int(len(gaps)),
+            "gaps": gaps,
+            "initial_balance": candidate_backtest_result["initial_balance"],
+            **candidate_summary,
+        }
+
+        reflection_report = build_research_reflection_report(
+            symbol=symbol,
+            interval=interval,
+            limit=limit,
+            baseline_report=report,
+            proposal=proposal,
+            candidate_report=candidate_report,
+        )
+
+        write_json(outputs_dir / "research_reflection_report.json", reflection_report)
+
+        report["reflection"] = {
+            "enabled": True,
+            "report_path": str(outputs_dir / "research_reflection_report.json"),
+            "decision": reflection_report["decision"],
+            "variable": reflection_report["hypothesis"]["variable"],
+            "old_value": reflection_report["hypothesis"]["old_value"],
+            "new_value": reflection_report["hypothesis"]["new_value"],
+        }
 
     echo_json(report)
 
