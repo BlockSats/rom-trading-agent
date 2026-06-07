@@ -128,3 +128,72 @@ def test_research_cycle_fetches_inspects_backtests_scores_and_leaves_state(
 
     after_state = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
     assert after_state == before_state
+
+
+def test_research_cycle_with_reflect_writes_comparison_report_and_leaves_state(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    before_state = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
+    before_strategy = (tmp_path / "config" / "strategy.yaml").read_text(encoding="utf-8")
+
+    def fake_fetch_binance_ohlcv(symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        assert symbol == "BTCUSDT"
+        assert interval == "1h"
+        assert limit == 60
+        return _sample_binance_rows(rows=60)
+
+    monkeypatch.setattr(
+        "trading_agent.cli.fetch_binance_ohlcv",
+        fake_fetch_binance_ohlcv,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "research-cycle",
+            "--symbol",
+            "BTCUSDT",
+            "--interval",
+            "1h",
+            "--limit",
+            "60",
+            "--output",
+            "data/BTCUSDT_1h.csv",
+            "--reflect",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    payload = json.loads(result.stdout)
+
+    assert payload["command"] == "research-cycle"
+    assert payload["status"] == "completed"
+    assert payload["reflection"]["enabled"] is True
+    assert payload["reflection"]["variable"] == "entry.threshold"
+    assert payload["reflection"]["old_value"] == 30.0
+    assert payload["reflection"]["new_value"] == 28.0
+
+    reflection_report_path = tmp_path / "outputs" / "research_reflection_report.json"
+    assert reflection_report_path.exists()
+
+    reflection_report = json.loads(reflection_report_path.read_text(encoding="utf-8"))
+
+    assert reflection_report["command"] == "research-cycle"
+    assert reflection_report["reflection_enabled"] is True
+    assert reflection_report["status"] == "completed"
+    assert reflection_report["hypothesis"]["variable"] == "entry.threshold"
+    assert reflection_report["decision"] in {"keep", "reject"}
+    assert "baseline" in reflection_report
+    assert "candidate" in reflection_report
+
+    after_state = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
+    after_strategy = (tmp_path / "config" / "strategy.yaml").read_text(encoding="utf-8")
+
+    assert after_state == before_state
+    assert after_strategy == before_strategy
