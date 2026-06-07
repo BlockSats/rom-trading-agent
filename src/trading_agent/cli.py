@@ -151,6 +151,79 @@ def fetch_ohlcv(
         }
     )
 
+@app.command("research-cycle")
+def research_cycle(
+    symbol: str = typer.Option("BTCUSDT", "--symbol", help="Binance symbol, e.g. BTCUSDT."),
+    interval: str = typer.Option("1h", "--interval", help="Binance interval, e.g. 1m, 5m, 1h, 1d."),
+    limit: int = typer.Option(500, "--limit", help="Number of candles to fetch. Binance max is 1000."),
+    output: Path = typer.Option(
+        Path("data/BTCUSDT_1h.csv"),
+        "--output",
+        "-o",
+        help="Output CSV path.",
+    ),
+    fail_on_gaps: bool = typer.Option(
+        False,
+        "--fail-on-gaps",
+        help="Exit with code 1 if time gaps are detected.",
+    ),
+) -> None:
+    """Run a full research cycle: fetch, inspect, backtest, and score."""
+    strategy = load_strategy()
+    goal = load_goal()
+
+    rows = fetch_binance_ohlcv(symbol=symbol, interval=interval, limit=limit)
+    output_path = write_ohlcv_csv(rows, output)
+
+    ohlcv = load_ohlcv_csv(output_path)
+    gaps = detect_time_gaps(ohlcv)
+
+    if fail_on_gaps and gaps:
+        echo_json(
+            {
+                "stage": "inspect",
+                "status": "failed",
+                "reason": "time_gaps_detected",
+                "symbol": symbol.upper(),
+                "interval": interval,
+                "limit": limit,
+                "csv_path": str(output_path),
+                "rows": int(len(ohlcv)),
+                "gaps_detected": int(len(gaps)),
+                "gaps": gaps,
+            }
+        )
+        raise typer.Exit(code=1)
+
+    backtest_result = run_backtest(ohlcv, strategy)
+    score_result = score_trades(backtest_result["trades"], goal)
+    summary = summarize_backtest(backtest_result["trades"], score_result)
+
+    report = {
+        "command": "research-cycle",
+        "status": "completed",
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "limit": limit,
+        "csv_path": str(output_path),
+        "asset": strategy["asset"],
+        "timeframe": strategy["timeframe"],
+        "rows": int(len(ohlcv)),
+        "gaps_detected": int(len(gaps)),
+        "gaps": gaps,
+        "initial_balance": backtest_result["initial_balance"],
+        **summary,
+    }
+
+    outputs_dir = Path("outputs")
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    write_json(outputs_dir / "research_cycle_report.json", report)
+    write_json(outputs_dir / "backtest_report.json", report)
+    write_jsonl(outputs_dir / "backtest_trades.jsonl", backtest_result["trades"])
+
+    echo_json(report)
+
 @app.command("run-once")
 def run_once() -> None:
     """Run one paper-trading decision cycle."""
