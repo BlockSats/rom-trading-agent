@@ -14,6 +14,7 @@ from trading_agent.data import detect_time_gaps, load_ohlcv_csv
 from trading_agent.loop import run_once as run_once_once
 from trading_agent.reflection import apply_reflection_proposal, propose_one_change
 from trading_agent.research_reflection import build_research_reflection_report
+from trading_agent.research_robustness import build_research_robustness_report
 from trading_agent.scoring import score_trades
 from trading_agent.storage import (
     append_jsonl,
@@ -274,6 +275,72 @@ def research_cycle(
             "old_value": reflection_report["hypothesis"]["old_value"],
             "new_value": reflection_report["hypothesis"]["new_value"],
         }
+
+    echo_json(report)
+
+@app.command("research-robustness")
+def research_robustness(
+    symbol: str = typer.Option("BTCUSDT", "--symbol", help="Binance symbol, e.g. BTCUSDT."),
+    interval: str = typer.Option("1h", "--interval", help="Binance interval, e.g. 1m, 5m, 1h, 1d."),
+    limit: int = typer.Option(1000, "--limit", help="Number of candles to fetch. Binance max is 1000."),
+    output: Path = typer.Option(
+        Path("data/BTCUSDT_1h.csv"),
+        "--output",
+        "-o",
+        help="Output CSV path.",
+    ),
+    windows: int = typer.Option(
+        4,
+        "--windows",
+        help="Number of chronological windows used for robustness validation.",
+    ),
+) -> None:
+    """Run controlled reflection robustness validation across multiple windows."""
+    if windows < 3:
+        echo_json(
+            {
+                "command": "research-robustness",
+                "status": "failed",
+                "reason": "windows_must_be_at_least_3",
+                "windows": windows,
+            }
+        )
+        raise typer.Exit(code=1)
+
+    strategy = load_strategy()
+    goal = load_goal()
+
+    rows = fetch_binance_ohlcv(symbol=symbol, interval=interval, limit=limit)
+    output_path = write_ohlcv_csv(rows, output)
+
+    ohlcv = load_ohlcv_csv(output_path)
+    gaps = detect_time_gaps(ohlcv)
+
+    baseline_backtest = run_backtest(ohlcv, strategy)
+    baseline_score = score_trades(baseline_backtest["trades"], goal)
+
+    proposal = propose_one_change(strategy, baseline_score)
+
+    report = build_research_robustness_report(
+        symbol=symbol,
+        interval=interval,
+        limit=limit,
+        windows=windows,
+        ohlcv=ohlcv,
+        strategy=strategy,
+        goal=goal,
+        proposal=proposal,
+    )
+
+    report["csv_path"] = str(output_path)
+    report["rows"] = int(len(ohlcv))
+    report["gaps_detected"] = int(len(gaps))
+    report["gaps"] = gaps
+
+    outputs_dir = Path("outputs")
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    write_json(outputs_dir / "research_robustness_report.json", report)
 
     echo_json(report)
 
