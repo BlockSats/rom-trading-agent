@@ -40,6 +40,19 @@ def safe_count_jsonl(path: str) -> int:
         return 0
     return len(read_jsonl(path))
 
+def validate_binance_limit(command: str, limit: int) -> None:
+    """Fail clearly before network calls when Binance candle limit is invalid."""
+    if limit < 1 or limit > 1000:
+        echo_json(
+            {
+                "command": command,
+                "status": "failed",
+                "reason": "limit_must_be_between_1_and_1000",
+                "limit": limit,
+            }
+        )
+        raise typer.Exit(code=1)
+
 
 @app.command("check")
 def check() -> None:
@@ -160,6 +173,7 @@ def fetch_ohlcv(
     ),
 ) -> None:
     """Fetch public OHLCV candles from Binance and save them as CSV."""
+    validate_binance_limit("fetch-ohlcv", limit)
     rows = fetch_binance_ohlcv(symbol=symbol, interval=interval, limit=limit)
     output_path = write_ohlcv_csv(rows, output)
 
@@ -196,6 +210,8 @@ def research_cycle(
     ),
 ) -> None:
     """Run a full research cycle: fetch, inspect, backtest, score, and optionally reflect."""
+    validate_binance_limit("research-cycle", limit)
+
     strategy = load_strategy()
     goal = load_goal()
 
@@ -326,6 +342,8 @@ def research_robustness(
             }
         )
         raise typer.Exit(code=1)
+
+    validate_binance_limit("research-robustness", limit)
 
     strategy = load_strategy()
     goal = load_goal()
