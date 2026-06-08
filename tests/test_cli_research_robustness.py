@@ -148,6 +148,8 @@ def test_research_robustness_writes_report_and_leaves_state(
     assert payload["final_decision"] in {"keep", "reject"}
     assert len(payload["windows_results"]) == 4
     assert "summary" in payload
+    assert payload["output_dir"] == "outputs"
+    assert payload["robustness_report_path"] == "outputs/research_robustness_report.json"
 
     report_path = tmp_path / "outputs" / "research_robustness_report.json"
     assert report_path.exists()
@@ -163,3 +165,53 @@ def test_research_robustness_writes_report_and_leaves_state(
 
     assert after_state == before_state
     assert after_strategy == before_strategy
+
+
+def test_research_robustness_writes_to_custom_output_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    def fake_fetch_binance_ohlcv(symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        assert symbol == "BTCUSDT"
+        assert interval == "1h"
+        assert limit == 80
+        return _sample_binance_rows(rows=80)
+
+    monkeypatch.setattr(
+        "trading_agent.cli.fetch_binance_ohlcv",
+        fake_fetch_binance_ohlcv,
+    )
+
+    custom_dir = tmp_path / "tmp" / "robustness-test"
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "research-robustness",
+            "--symbol",
+            "BTCUSDT",
+            "--interval",
+            "1h",
+            "--limit",
+            "80",
+            "--output",
+            "data/BTCUSDT_1h.csv",
+            "--output-dir",
+            str(custom_dir),
+            "--windows",
+            "4",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    report_path = custom_dir / "research_robustness_report.json"
+    assert report_path.exists()
+    assert not (tmp_path / "outputs" / "research_robustness_report.json").exists()
+
+    payload = json.loads(result.stdout)
+    assert payload["output_dir"] == str(custom_dir)
+    assert payload["robustness_report_path"] == str(report_path)
