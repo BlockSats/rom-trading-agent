@@ -50,9 +50,10 @@ reflection_every_closed_trades: 5
     )
 
 
-def _write_csv(tmp_path: Path) -> Path:
+def _write_csv(tmp_path: Path, with_gap: bool = True) -> Path:
     df = generate_sample_ohlcv(rows=50, seed=42)
-    df.loc[20:, "timestamp"] = df.loc[20:, "timestamp"] + pd.Timedelta(hours=1)
+    if with_gap:
+        df.loc[20:, "timestamp"] = df.loc[20:, "timestamp"] + pd.Timedelta(hours=1)
     csv_path = tmp_path / "data.csv"
     df.to_csv(csv_path, index=False)
     return csv_path
@@ -68,10 +69,42 @@ def test_backtest_cli_creates_outputs_and_leaves_state_untouched(tmp_path: Path,
     result = runner.invoke(app, ["backtest-csv", str(csv_path)])
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "outputs" / "backtest_report.json").exists()
-    assert (tmp_path / "outputs" / "backtest_trades.jsonl").exists()
+    report_path = tmp_path / "outputs" / "backtest_report.json"
+    trades_path = tmp_path / "outputs" / "backtest_trades.jsonl"
+    assert report_path.exists()
+    assert trades_path.exists()
     assert (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8") == before_state
 
-    report = json.loads((tmp_path / "outputs" / "backtest_report.json").read_text(encoding="utf-8"))
+    payload = json.loads(result.stdout)
+    assert payload["output_dir"] == "outputs"
+    assert payload["report_path"] == "outputs/backtest_report.json"
+    assert payload["trades_path"] == "outputs/backtest_trades.jsonl"
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["rows"] == 50
     assert "score" in report
+
+
+def test_backtest_cli_writes_to_custom_output_dir(tmp_path: Path, monkeypatch) -> None:
+    _write_config(tmp_path)
+    csv_path = _write_csv(tmp_path, with_gap=False)
+    monkeypatch.chdir(tmp_path)
+
+    before_state = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
+    custom_dir = tmp_path / "tmp" / "backtest-test"
+    runner = CliRunner()
+    result = runner.invoke(app, ["backtest-csv", str(csv_path), "--output-dir", str(custom_dir)])
+
+    assert result.exit_code == 0, result.output
+    report_path = custom_dir / "backtest_report.json"
+    trades_path = custom_dir / "backtest_trades.jsonl"
+    assert report_path.exists()
+    assert trades_path.exists()
+    assert not (tmp_path / "outputs" / "backtest_report.json").exists()
+    assert not (tmp_path / "outputs" / "backtest_trades.jsonl").exists()
+    assert (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8") == before_state
+
+    payload = json.loads(result.stdout)
+    assert payload["output_dir"] == str(custom_dir)
+    assert payload["report_path"] == str(report_path)
+    assert payload["trades_path"] == str(trades_path)
