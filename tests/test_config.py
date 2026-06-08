@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from trading_agent.config import load_goal, load_strategy, validate_strategy
+from trading_agent.config import get_active_strategy_id, load_goal, load_strategy, validate_strategy
 
 
 def test_valid_strategy_loads(tmp_path: Path) -> None:
@@ -13,6 +13,7 @@ def test_valid_strategy_loads(tmp_path: Path) -> None:
     (config_dir / "strategy.yaml").write_text(
         """
 version: "0001"
+strategy_id: rsi_baseline
 asset: "BTC/USDT"
 timeframe: "1h"
 entry:
@@ -36,6 +37,7 @@ reflection:
     )
     loaded = load_strategy(config_dir / "strategy.yaml")
     assert loaded["version"] == "0001"
+    assert loaded["strategy_id"] == "rsi_baseline"
     assert loaded["entry"]["threshold"] == 30
 
 
@@ -60,6 +62,40 @@ reflection_every_closed_trades: 5
 def test_invalid_missing_strategy_fields_raise_errors() -> None:
     with pytest.raises(ValueError):
         validate_strategy({"version": "0001"})
+
+
+def test_strategy_id_defaults_to_rsi_baseline_when_missing() -> None:
+    strategy = {
+        "version": "0001",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {"indicator": "rsi", "threshold": 30, "direction": "long"},
+        "exit": {"rsi_take_profit": 55},
+        "risk": {"stop_loss_pct": 2, "position_size_pct": 10},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.threshold"]},
+    }
+
+    loaded = validate_strategy(strategy)
+
+    assert get_active_strategy_id(loaded) == "rsi_baseline"
+
+
+def test_unknown_strategy_id_raises_clear_error() -> None:
+    strategy = {
+        "version": "0001",
+        "strategy_id": "ema_atr",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {"indicator": "rsi", "threshold": 30, "direction": "long"},
+        "exit": {"rsi_take_profit": 55},
+        "risk": {"stop_loss_pct": 2, "position_size_pct": 10},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.threshold"]},
+    }
+
+    with pytest.raises(ValueError, match="unsupported strategy_id: ema_atr"):
+        validate_strategy(strategy)
 
 
 def test_invalid_risk_values_raise_errors() -> None:

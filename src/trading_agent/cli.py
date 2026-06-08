@@ -9,7 +9,13 @@ import yaml
 
 from trading_agent.market_data.binance import fetch_binance_ohlcv, write_ohlcv_csv
 from trading_agent.backtest import run_backtest, summarize_backtest
-from trading_agent.config import load_goal, load_strategy, validate_goal, validate_strategy
+from trading_agent.config import (
+    get_active_strategy_id,
+    load_goal,
+    load_strategy,
+    validate_goal,
+    validate_strategy,
+)
 from trading_agent.data import detect_time_gaps, load_ohlcv_csv
 from trading_agent.loop import run_once as run_once_once
 from trading_agent.reflection import apply_reflection_proposal, propose_one_change
@@ -112,6 +118,7 @@ def config(
         risk = strategy.get("risk", {})
 
         typer.echo("Strategy")
+        typer.echo(f"  Strategy ID: {get_active_strategy_id(strategy)}")
         typer.echo(f"  Version: {strategy.get('version')}")
         typer.echo(f"  Asset: {strategy.get('asset')}")
         typer.echo(f"  Timeframe: {strategy.get('timeframe')}")

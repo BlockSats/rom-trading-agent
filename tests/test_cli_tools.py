@@ -27,6 +27,7 @@ def test_config_command_default_readable() -> None:
 
     assert result.exit_code == 0
     assert "Strategy" in result.stdout
+    assert "Strategy ID: rsi_baseline" in result.stdout
     assert "Version:" in result.stdout
     assert "Goal" in result.stdout
     assert "Target return 30d:" in result.stdout
@@ -49,6 +50,7 @@ def test_config_command_strategy_only() -> None:
     payload = json.loads(result.stdout)
 
     assert "strategy" in payload
+    assert payload["strategy"]["strategy_id"] == "rsi_baseline"
     assert "goal" not in payload
 
 

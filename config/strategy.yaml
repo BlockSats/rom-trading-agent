@@ -1,4 +1,5 @@
 version: "0001"
+strategy_id: rsi_baseline
 asset: "BTC/USDT"
 timeframe: "1h"
 
