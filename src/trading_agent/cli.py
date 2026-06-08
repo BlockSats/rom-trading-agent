@@ -83,8 +83,8 @@ def status() -> None:
 
 @app.command("config")
 def config(
-    section: str = typer.Option(
-        "all",
+    section: str | None = typer.Option(
+        None,
         "--section",
         "-s",
         help="Configuration section to display: all, strategy, or goal.",
@@ -93,6 +93,26 @@ def config(
     """Display current strategy and/or goal configuration."""
     strategy = load_strategy()
     goal = load_goal()
+
+    if section is None:
+        entry = strategy.get("entry", {})
+        risk = strategy.get("risk", {})
+
+        typer.echo("Strategy")
+        typer.echo(f"  Version: {strategy.get('version')}")
+        typer.echo(f"  Asset: {strategy.get('asset')}")
+        typer.echo(f"  Timeframe: {strategy.get('timeframe')}")
+        typer.echo(f"  Entry: {entry.get('indicator')} <= {entry.get('threshold')}")
+        typer.echo(f"  Stop loss: {risk.get('stop_loss_pct')}%")
+        typer.echo(f"  Position size: {risk.get('position_size_pct')}%")
+        typer.echo("")
+        typer.echo("Goal")
+        typer.echo(f"  Asset: {goal.get('asset')}")
+        typer.echo(f"  Target return 30d: {goal.get('target_return_30d')}")
+        typer.echo(f"  Max drawdown: {goal.get('max_drawdown')}")
+        typer.echo(f"  Min Sharpe: {goal.get('min_sharpe')}")
+        typer.echo(f"  Reflection every closed trades: {goal.get('reflection_every_closed_trades')}")
+        return
 
     if section == "all":
         payload = {"strategy": strategy, "goal": goal}

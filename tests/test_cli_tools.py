@@ -22,8 +22,18 @@ def test_status_command() -> None:
     assert "state" in payload
 
 
-def test_config_command_all() -> None:
+def test_config_command_default_readable() -> None:
     result = runner.invoke(app, ["config"])
+
+    assert result.exit_code == 0
+    assert "Strategy" in result.stdout
+    assert "Version:" in result.stdout
+    assert "Goal" in result.stdout
+    assert "Target return 30d:" in result.stdout
+
+
+def test_config_command_all() -> None:
+    result = runner.invoke(app, ["config", "--section", "all"])
 
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
