@@ -198,6 +198,11 @@ def research_cycle(
         "-o",
         help="Output CSV path.",
     ),
+    output_dir: Path = typer.Option(
+        Path("outputs"),
+        "--output-dir",
+        help="Directory where research cycle reports are written.",
+    ),
     fail_on_gaps: bool = typer.Option(
         False,
         "--fail-on-gaps",
@@ -258,12 +263,20 @@ def research_cycle(
         **summary,
     }
 
-    outputs_dir = Path("outputs")
+    outputs_dir = output_dir
     outputs_dir.mkdir(parents=True, exist_ok=True)
+    research_report_path = outputs_dir / "research_cycle_report.json"
+    backtest_report_path = outputs_dir / "backtest_report.json"
+    trades_path = outputs_dir / "backtest_trades.jsonl"
 
-    write_json(outputs_dir / "research_cycle_report.json", report)
-    write_json(outputs_dir / "backtest_report.json", report)
-    write_jsonl(outputs_dir / "backtest_trades.jsonl", backtest_result["trades"])
+    report["output_dir"] = str(outputs_dir)
+    report["research_report_path"] = str(research_report_path)
+    report["backtest_report_path"] = str(backtest_report_path)
+    report["trades_path"] = str(trades_path)
+
+    write_json(research_report_path, report)
+    write_json(backtest_report_path, report)
+    write_jsonl(trades_path, backtest_result["trades"])
 
     if reflect:
         proposal = propose_one_change(strategy, score_result)
@@ -301,11 +314,12 @@ def research_cycle(
             candidate_report=candidate_report,
         )
 
-        write_json(outputs_dir / "research_reflection_report.json", reflection_report)
+        reflection_report_path = outputs_dir / "research_reflection_report.json"
+        write_json(reflection_report_path, reflection_report)
 
         report["reflection"] = {
             "enabled": True,
-            "report_path": str(outputs_dir / "research_reflection_report.json"),
+            "report_path": str(reflection_report_path),
             "decision": reflection_report["decision"],
             "variable": reflection_report["hypothesis"]["variable"],
             "old_value": reflection_report["hypothesis"]["old_value"],

@@ -120,11 +120,76 @@ def test_research_cycle_fetches_inspects_backtests_scores_and_leaves_state(
     assert payload["rows"] == 60
     assert payload["gaps_detected"] == 0
     assert "score" in payload
+    assert payload["output_dir"] == "outputs"
+    assert payload["research_report_path"] == "outputs/research_cycle_report.json"
+    assert payload["backtest_report_path"] == "outputs/backtest_report.json"
+    assert payload["trades_path"] == "outputs/backtest_trades.jsonl"
 
     assert (tmp_path / "data" / "BTCUSDT_1h.csv").exists()
     assert (tmp_path / "outputs" / "research_cycle_report.json").exists()
     assert (tmp_path / "outputs" / "backtest_report.json").exists()
     assert (tmp_path / "outputs" / "backtest_trades.jsonl").exists()
+
+    after_state = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
+    assert after_state == before_state
+
+
+def test_research_cycle_writes_to_custom_output_dir(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    before_state = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
+
+    def fake_fetch_binance_ohlcv(symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        assert symbol == "BTCUSDT"
+        assert interval == "1h"
+        assert limit == 60
+        return _sample_binance_rows(rows=60)
+
+    monkeypatch.setattr(
+        "trading_agent.cli.fetch_binance_ohlcv",
+        fake_fetch_binance_ohlcv,
+    )
+
+    custom_dir = tmp_path / "tmp" / "research-test"
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "research-cycle",
+            "--symbol",
+            "BTCUSDT",
+            "--interval",
+            "1h",
+            "--limit",
+            "60",
+            "--output",
+            "data/BTCUSDT_1h.csv",
+            "--output-dir",
+            str(custom_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+
+    research_report_path = custom_dir / "research_cycle_report.json"
+    backtest_report_path = custom_dir / "backtest_report.json"
+    trades_path = custom_dir / "backtest_trades.jsonl"
+    assert research_report_path.exists()
+    assert backtest_report_path.exists()
+    assert trades_path.exists()
+    assert not (tmp_path / "outputs" / "research_cycle_report.json").exists()
+    assert not (tmp_path / "outputs" / "backtest_report.json").exists()
+    assert not (tmp_path / "outputs" / "backtest_trades.jsonl").exists()
+
+    payload = json.loads(result.stdout)
+    assert payload["output_dir"] == str(custom_dir)
+    assert payload["research_report_path"] == str(research_report_path)
+    assert payload["backtest_report_path"] == str(backtest_report_path)
+    assert payload["trades_path"] == str(trades_path)
 
     after_state = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
     assert after_state == before_state
@@ -152,6 +217,7 @@ def test_research_cycle_with_reflect_writes_comparison_report_and_leaves_state(
     )
 
     runner = CliRunner()
+    custom_dir = tmp_path / "tmp" / "research-reflect"
     result = runner.invoke(
         app,
         [
@@ -164,6 +230,8 @@ def test_research_cycle_with_reflect_writes_comparison_report_and_leaves_state(
             "60",
             "--output",
             "data/BTCUSDT_1h.csv",
+            "--output-dir",
+            str(custom_dir),
             "--reflect",
         ],
     )
@@ -179,8 +247,10 @@ def test_research_cycle_with_reflect_writes_comparison_report_and_leaves_state(
     assert payload["reflection"]["old_value"] == 30.0
     assert payload["reflection"]["new_value"] == 28.0
 
-    reflection_report_path = tmp_path / "outputs" / "research_reflection_report.json"
+    reflection_report_path = custom_dir / "research_reflection_report.json"
+    assert payload["reflection"]["report_path"] == str(reflection_report_path)
     assert reflection_report_path.exists()
+    assert not (tmp_path / "outputs" / "research_reflection_report.json").exists()
 
     reflection_report = json.loads(reflection_report_path.read_text(encoding="utf-8"))
 
