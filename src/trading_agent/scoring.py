@@ -46,10 +46,42 @@ def calculate_sharpe_like(trades: list[dict[str, Any]]) -> float:
     return mean_return / sqrt(variance) * sqrt(len(returns))
 
 
-def score_trades(trades: list[dict[str, Any]], goal: dict[str, Any]) -> dict[str, float]:
+def calculate_winrate(trades: list[dict[str, Any]]) -> float:
+    if not trades:
+        return 0.0
+
+    wins = sum(1 for trade in trades if float(trade.get("net_pnl", 0.0)) > 0)
+    return wins / len(trades)
+
+
+def calculate_profit_factor(trades: list[dict[str, Any]]) -> float | None:
+    if not trades:
+        return None
+
+    pnl_values = [float(trade.get("net_pnl", 0.0)) for trade in trades]
+    gross_profit = sum(value for value in pnl_values if value > 0)
+    gross_loss = sum(value for value in pnl_values if value < 0)
+
+    if gross_loss == 0:
+        return None
+    return gross_profit / abs(gross_loss)
+
+
+def calculate_expectancy(trades: list[dict[str, Any]]) -> float:
+    if not trades:
+        return 0.0
+
+    total_pnl = sum(float(trade.get("net_pnl", 0.0)) for trade in trades)
+    return total_pnl / len(trades)
+
+
+def score_trades(trades: list[dict[str, Any]], goal: dict[str, Any]) -> dict[str, Any]:
     total_return = calculate_total_return(trades)
     max_drawdown = calculate_max_drawdown(trades)
     sharpe_like = calculate_sharpe_like(trades)
+    winrate = calculate_winrate(trades)
+    profit_factor = calculate_profit_factor(trades)
+    expectancy = calculate_expectancy(trades)
 
     if not trades:
         score = 0.0
@@ -63,6 +95,8 @@ def score_trades(trades: list[dict[str, Any]], goal: dict[str, Any]) -> dict[str
         "total_return": float(total_return),
         "max_drawdown": float(max_drawdown),
         "sharpe_like": float(sharpe_like),
+        "winrate": float(winrate),
+        "profit_factor": profit_factor,
+        "expectancy": float(expectancy),
         "score": float(max(min(score, 1.0), -1.0)),
     }
-
