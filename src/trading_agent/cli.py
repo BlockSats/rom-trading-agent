@@ -399,7 +399,14 @@ def score() -> None:
 
 
 @app.command("backtest-csv")
-def backtest_csv(path: Path) -> None:
+def backtest_csv(
+    path: Path,
+    output_dir: Path = typer.Option(
+        Path("outputs"),
+        "--output-dir",
+        help="Directory where backtest reports are written.",
+    ),
+) -> None:
     """Run a CSV backtest and write output reports."""
     strategy = load_strategy()
     goal = load_goal()
@@ -421,11 +428,17 @@ def backtest_csv(path: Path) -> None:
         **summary,
     }
 
-    outputs_dir = Path("outputs")
+    outputs_dir = output_dir
     outputs_dir.mkdir(parents=True, exist_ok=True)
+    report_path = outputs_dir / "backtest_report.json"
+    trades_path = outputs_dir / "backtest_trades.jsonl"
 
-    write_json(outputs_dir / "backtest_report.json", report)
-    write_jsonl(outputs_dir / "backtest_trades.jsonl", backtest_result["trades"])
+    report["output_dir"] = str(outputs_dir)
+    report["report_path"] = str(report_path)
+    report["trades_path"] = str(trades_path)
+
+    write_json(report_path, report)
+    write_jsonl(trades_path, backtest_result["trades"])
 
     echo_json(report)
 
