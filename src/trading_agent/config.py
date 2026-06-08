@@ -7,6 +7,10 @@ from typing import Any
 import yaml
 
 
+SUPPORTED_STRATEGY_IDS = {"rsi_baseline"}
+DEFAULT_STRATEGY_ID = "rsi_baseline"
+
+
 def load_yaml(path: str | Path) -> dict[str, Any]:
     file_path = Path(path)
     with file_path.open("r", encoding="utf-8") as handle:
@@ -26,12 +30,23 @@ def _require_mapping(data: Any, name: str) -> dict[str, Any]:
     return data
 
 
+def get_active_strategy_id(strategy: dict[str, Any]) -> str:
+    strategy_id = strategy.get("strategy_id", DEFAULT_STRATEGY_ID)
+    if not isinstance(strategy_id, str) or not strategy_id:
+        raise ValueError("strategy.strategy_id must be a non-empty string")
+    return strategy_id
+
+
 def validate_strategy(strategy: dict[str, Any]) -> dict[str, Any]:
     strategy = _require_mapping(strategy, "strategy")
     required_keys = ["version", "asset", "timeframe", "entry", "exit", "risk", "costs", "reflection"]
     for key in required_keys:
         if key not in strategy:
             raise ValueError(f"strategy missing required field: {key}")
+
+    strategy_id = get_active_strategy_id(strategy)
+    if strategy_id not in SUPPORTED_STRATEGY_IDS:
+        raise ValueError(f"unsupported strategy_id: {strategy_id}")
 
     if not isinstance(strategy["version"], str) or not strategy["version"]:
         raise ValueError("strategy.version must be a non-empty string")
@@ -102,4 +117,3 @@ def load_strategy(path: str | Path = "config/strategy.yaml") -> dict[str, Any]:
 
 def load_goal(path: str | Path = "config/goal.yaml") -> dict[str, Any]:
     return validate_goal(load_yaml(path))
-
