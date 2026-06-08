@@ -339,6 +339,11 @@ def research_robustness(
         "-o",
         help="Output CSV path.",
     ),
+    output_dir: Path = typer.Option(
+        Path("outputs"),
+        "--output-dir",
+        help="Directory where research robustness reports are written.",
+    ),
     windows: int = typer.Option(
         4,
         "--windows",
@@ -389,10 +394,14 @@ def research_robustness(
     report["gaps_detected"] = int(len(gaps))
     report["gaps"] = gaps
 
-    outputs_dir = Path("outputs")
+    outputs_dir = output_dir
     outputs_dir.mkdir(parents=True, exist_ok=True)
+    robustness_report_path = outputs_dir / "research_robustness_report.json"
 
-    write_json(outputs_dir / "research_robustness_report.json", report)
+    report["output_dir"] = str(outputs_dir)
+    report["robustness_report_path"] = str(robustness_report_path)
+
+    write_json(robustness_report_path, report)
 
     echo_json(report)
 
