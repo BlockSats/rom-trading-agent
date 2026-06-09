@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 from typer.testing import CliRunner
 
-from trading_agent.cli import app
+from trading_agent.cli import app, classify_strategy_summary
 from trading_agent.data import generate_sample_ohlcv
 
 
@@ -233,6 +233,45 @@ def test_compare_strategies_windows_csv_rejects_more_windows_than_rows(tmp_path:
     assert payload["rows"] == 50
 
 
+def test_classify_strategy_summary_returns_research_status() -> None:
+    assert classify_strategy_summary(
+        {
+            "total_trades": 9,
+            "windows_with_trades": 4,
+            "positive_expectancy_windows": 4,
+            "average_expectancy": 1.0,
+            "average_profit_factor": 2.0,
+        }
+    ) == "insufficient_trades"
+    assert classify_strategy_summary(
+        {
+            "total_trades": 10,
+            "windows_with_trades": 2,
+            "positive_expectancy_windows": 2,
+            "average_expectancy": -0.1,
+            "average_profit_factor": 1.5,
+        }
+    ) == "weak"
+    assert classify_strategy_summary(
+        {
+            "total_trades": 10,
+            "windows_with_trades": 2,
+            "positive_expectancy_windows": 1,
+            "average_expectancy": 0.1,
+            "average_profit_factor": 1.1,
+        }
+    ) == "watchlist"
+    assert classify_strategy_summary(
+        {
+            "total_trades": 10,
+            "windows_with_trades": 2,
+            "positive_expectancy_windows": 2,
+            "average_expectancy": 0.1,
+            "average_profit_factor": 1.1,
+        }
+    ) == "candidate"
+
+
 def test_show_comparison_report_displays_summary(tmp_path: Path, monkeypatch) -> None:
     report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
     report_path.parent.mkdir()
@@ -277,10 +316,80 @@ def test_show_comparison_report_displays_summary(tmp_path: Path, monkeypatch) ->
     assert result.exit_code == 0
     assert "Comparison report" in result.stdout
     assert "Summary by strategy" in result.stdout
+    assert "Acceptance thresholds" in result.stdout
+    assert "Min total trades: 10" in result.stdout
     assert "rsi_baseline" in result.stdout
     assert "ema_atr_trend" in result.stdout
+    assert "Research status: watchlist" in result.stdout
+    assert "Research status: insufficient_trades" in result.stdout
     assert "Average expectancy" in result.stdout
     assert "Average profit factor" in result.stdout
+    assert "best_strategy" not in result.stdout
+
+
+def test_show_comparison_report_displays_all_research_statuses(tmp_path: Path, monkeypatch) -> None:
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 100,
+                "windows": 4,
+                "gaps_detected": 0,
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "too_few",
+                        "windows": 4,
+                        "windows_with_trades": 1,
+                        "total_trades": 12,
+                        "positive_expectancy_windows": 2,
+                        "average_expectancy": 0.2,
+                        "average_profit_factor": 1.4,
+                    },
+                    {
+                        "strategy_id": "weak_expectancy",
+                        "windows": 4,
+                        "windows_with_trades": 2,
+                        "total_trades": 12,
+                        "positive_expectancy_windows": 2,
+                        "average_expectancy": -0.1,
+                        "average_profit_factor": 1.4,
+                    },
+                    {
+                        "strategy_id": "watch",
+                        "windows": 4,
+                        "windows_with_trades": 2,
+                        "total_trades": 12,
+                        "positive_expectancy_windows": 1,
+                        "average_expectancy": 0.2,
+                        "average_profit_factor": 1.4,
+                    },
+                    {
+                        "strategy_id": "candidate",
+                        "windows": 4,
+                        "windows_with_trades": 2,
+                        "total_trades": 12,
+                        "positive_expectancy_windows": 2,
+                        "average_expectancy": 0.2,
+                        "average_profit_factor": 1.4,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    assert result.exit_code == 0
+    assert "Research status: insufficient_trades" in result.stdout
+    assert "Research status: weak" in result.stdout
+    assert "Research status: watchlist" in result.stdout
+    assert "Research status: candidate" in result.stdout
     assert "best_strategy" not in result.stdout
 
 

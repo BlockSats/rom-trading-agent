@@ -35,6 +35,12 @@ from trading_agent.storage import (
 
 app = typer.Typer(add_completion=False)
 
+MIN_TOTAL_TRADES = 10
+MIN_WINDOWS_WITH_TRADES = 2
+MIN_POSITIVE_EXPECTANCY_WINDOWS = 2
+MIN_AVERAGE_EXPECTANCY = 0.0
+MIN_AVERAGE_PROFIT_FACTOR = 1.1
+
 
 def echo_json(payload: dict[str, Any]) -> None:
     """Print JSON consistently for all CLI commands."""
@@ -176,6 +182,30 @@ def summarize_window_results_by_strategy(results: list[dict[str, Any]]) -> list[
         strategy_summaries.append(summary)
 
     return strategy_summaries
+
+
+def classify_strategy_summary(summary: dict[str, Any]) -> str:
+    total_trades = int(summary.get("total_trades", 0))
+    windows_with_trades = int(summary.get("windows_with_trades", 0))
+    positive_expectancy_windows = int(summary.get("positive_expectancy_windows", 0))
+    average_expectancy = summary.get("average_expectancy")
+    average_profit_factor = summary.get("average_profit_factor")
+
+    if total_trades < MIN_TOTAL_TRADES or windows_with_trades < MIN_WINDOWS_WITH_TRADES:
+        return "insufficient_trades"
+
+    if (
+        average_expectancy is None
+        or float(average_expectancy) <= MIN_AVERAGE_EXPECTANCY
+        or average_profit_factor is None
+        or float(average_profit_factor) < MIN_AVERAGE_PROFIT_FACTOR
+    ):
+        return "weak"
+
+    if positive_expectancy_windows < MIN_POSITIVE_EXPECTANCY_WINDOWS:
+        return "watchlist"
+
+    return "candidate"
 
 
 def load_comparison_report(path: Path) -> dict[str, Any]:
@@ -753,10 +783,18 @@ def show_comparison_report(
     if "report_path" in report:
         typer.echo(f"  Report path: {report.get('report_path')}")
     typer.echo("")
+    typer.echo("Acceptance thresholds")
+    typer.echo(f"  Min total trades: {MIN_TOTAL_TRADES}")
+    typer.echo(f"  Min windows with trades: {MIN_WINDOWS_WITH_TRADES}")
+    typer.echo(f"  Min positive expectancy windows: {MIN_POSITIVE_EXPECTANCY_WINDOWS}")
+    typer.echo(f"  Min average expectancy: {MIN_AVERAGE_EXPECTANCY}")
+    typer.echo(f"  Min average profit factor: {MIN_AVERAGE_PROFIT_FACTOR}")
+    typer.echo("")
     typer.echo("Summary by strategy")
 
     for strategy_summary in report["summary_by_strategy"]:
         typer.echo(f"  {strategy_summary.get('strategy_id')}")
+        typer.echo(f"    Research status: {classify_strategy_summary(strategy_summary)}")
         typer.echo(f"    Windows: {strategy_summary.get('windows')}")
         typer.echo(f"    Windows with trades: {strategy_summary.get('windows_with_trades')}")
         typer.echo(f"    Total trades: {strategy_summary.get('total_trades')}")
