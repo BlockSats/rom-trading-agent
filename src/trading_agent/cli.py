@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,28 @@ def validate_binance_limit(command: str, limit: int) -> None:
             }
         )
         raise typer.Exit(code=1)
+
+
+def build_strategy_variant(base_strategy: dict[str, Any], strategy_id: str) -> dict[str, Any]:
+    """Build an in-memory strategy variant without writing config files."""
+    strategy = deepcopy(base_strategy)
+    strategy["strategy_id"] = strategy_id
+
+    if strategy_id == "ema_atr_trend":
+        strategy["entry"] = {
+            "indicator": "ema_atr",
+            "fast_ema_period": 12,
+            "slow_ema_period": 26,
+            "direction": "long",
+        }
+        strategy["exit"] = {
+            "atr_period": 14,
+            "atr_stop_multiplier": 2.0,
+        }
+    elif strategy_id != "rsi_baseline":
+        raise ValueError(f"unsupported strategy_id: {strategy_id}")
+
+    return validate_strategy(strategy)
 
 
 @app.command("check")
@@ -476,6 +499,49 @@ def backtest_csv(
     write_json(report_path, report)
     write_jsonl(trades_path, backtest_result["trades"])
 
+    echo_json(report)
+
+
+@app.command("compare-strategies-csv")
+def compare_strategies_csv(path: Path) -> None:
+    """Compare supported strategy candidates on the same local OHLCV CSV."""
+    base_strategy = load_strategy()
+    goal = load_goal()
+    ohlcv = load_ohlcv_csv(path)
+    gaps = detect_time_gaps(ohlcv)
+
+    strategies = []
+    for strategy_id in ["rsi_baseline", "ema_atr_trend"]:
+        strategy = build_strategy_variant(base_strategy, strategy_id)
+        backtest_result = run_backtest(ohlcv, strategy)
+        score_result = score_trades(backtest_result["trades"], goal)
+        summary = summarize_backtest(backtest_result["trades"], score_result)
+        strategies.append(
+            {
+                "strategy_id": strategy_id,
+                "initial_balance": backtest_result["initial_balance"],
+                **summary,
+                "winrate": score_result["winrate"],
+                "profit_factor": score_result["profit_factor"],
+                "expectancy": score_result["expectancy"],
+            }
+        )
+
+    outputs_dir = Path("outputs")
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    report_path = outputs_dir / "strategy_comparison_report.json"
+    report = {
+        "command": "compare-strategies-csv",
+        "csv_path": str(path),
+        "rows": int(len(ohlcv)),
+        "gaps_detected": int(len(gaps)),
+        "gaps": gaps,
+        "strategies": strategies,
+        "output_dir": str(outputs_dir),
+        "report_path": str(report_path),
+    }
+
+    write_json(report_path, report)
     echo_json(report)
 
 
