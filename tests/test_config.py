@@ -81,6 +81,51 @@ def test_strategy_id_defaults_to_rsi_baseline_when_missing() -> None:
     assert get_active_strategy_id(loaded) == "rsi_baseline"
 
 
+def test_validate_strategy_accepts_ema_atr_trend() -> None:
+    strategy = {
+        "version": "0001",
+        "strategy_id": "ema_atr_trend",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {
+            "indicator": "ema_atr",
+            "fast_ema_period": 2,
+            "slow_ema_period": 4,
+            "direction": "long",
+        },
+        "exit": {"atr_period": 2, "atr_stop_multiplier": 1.5},
+        "risk": {"stop_loss_pct": 2, "position_size_pct": 10},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.fast_ema_period"]},
+    }
+
+    loaded = validate_strategy(strategy)
+
+    assert get_active_strategy_id(loaded) == "ema_atr_trend"
+
+
+def test_validate_strategy_rejects_invalid_ema_atr_periods() -> None:
+    strategy = {
+        "version": "0001",
+        "strategy_id": "ema_atr_trend",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {
+            "indicator": "ema_atr",
+            "fast_ema_period": 4,
+            "slow_ema_period": 4,
+            "direction": "long",
+        },
+        "exit": {"atr_period": 2, "atr_stop_multiplier": 1.5},
+        "risk": {"stop_loss_pct": 2, "position_size_pct": 10},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.fast_ema_period"]},
+    }
+
+    with pytest.raises(ValueError, match="fast_ema_period must be lower"):
+        validate_strategy(strategy)
+
+
 def test_unknown_strategy_id_raises_clear_error() -> None:
     strategy = {
         "version": "0001",

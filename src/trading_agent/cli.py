@@ -115,14 +115,20 @@ def config(
 
     if section is None:
         entry = strategy.get("entry", {})
+        exit_ = strategy.get("exit", {})
         risk = strategy.get("risk", {})
+        strategy_id = get_active_strategy_id(strategy)
 
         typer.echo("Strategy")
-        typer.echo(f"  Strategy ID: {get_active_strategy_id(strategy)}")
+        typer.echo(f"  Strategy ID: {strategy_id}")
         typer.echo(f"  Version: {strategy.get('version')}")
         typer.echo(f"  Asset: {strategy.get('asset')}")
         typer.echo(f"  Timeframe: {strategy.get('timeframe')}")
-        typer.echo(f"  Entry: {entry.get('indicator')} <= {entry.get('threshold')}")
+        if strategy_id == "ema_atr_trend":
+            typer.echo(f"  Entry: EMA {entry.get('fast_ema_period')}/{entry.get('slow_ema_period')} trend")
+            typer.echo(f"  Exit: ATR {exit_.get('atr_period')} x {exit_.get('atr_stop_multiplier')}")
+        else:
+            typer.echo(f"  Entry: {entry.get('indicator')} <= {entry.get('threshold')}")
         typer.echo(f"  Stop loss: {risk.get('stop_loss_pct')}%")
         typer.echo(f"  Position size: {risk.get('position_size_pct')}%")
         typer.echo("")

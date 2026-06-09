@@ -4,7 +4,8 @@ from typing import Any
 
 import pandas as pd
 
-from trading_agent.indicators import rsi
+from trading_agent.config import get_active_strategy_id
+from trading_agent.indicators import atr, ema, rsi
 
 
 def evaluate_rsi_signal(latest_rsi: float, strategy: dict[str, Any]) -> str:
@@ -17,7 +18,7 @@ def evaluate_rsi_signal(latest_rsi: float, strategy: dict[str, Any]) -> str:
     return "hold"
 
 
-def generate_signals(df: pd.DataFrame, strategy: dict[str, Any]) -> pd.Series:
+def generate_rsi_signals(df: pd.DataFrame, strategy: dict[str, Any]) -> pd.Series:
     if "close" not in df.columns:
         raise ValueError("dataframe must contain a close column")
 
@@ -31,3 +32,65 @@ def generate_signals(df: pd.DataFrame, strategy: dict[str, Any]) -> pd.Series:
         signals.iloc[position] = evaluate_rsi_signal(float(latest_rsi), strategy)
 
     return signals
+
+
+def generate_ema_atr_trend_signals(df: pd.DataFrame, strategy: dict[str, Any]) -> pd.Series:
+    required_columns = {"high", "low", "close"}
+    missing_columns = sorted(required_columns - set(df.columns))
+    if missing_columns:
+        raise ValueError(f"dataframe must contain columns: {', '.join(missing_columns)}")
+
+    closes = df["close"].astype(float)
+    fast_ema = ema(closes.tolist(), int(strategy["entry"]["fast_ema_period"]))
+    slow_ema = ema(closes.tolist(), int(strategy["entry"]["slow_ema_period"]))
+    atr_values = atr(
+        df["high"].astype(float).tolist(),
+        df["low"].astype(float).tolist(),
+        closes.tolist(),
+        int(strategy["exit"]["atr_period"]),
+    )
+    atr_multiplier = float(strategy["exit"]["atr_stop_multiplier"])
+
+    signals = pd.Series("hold", index=df.index, dtype="object")
+    in_position = False
+    highest_close = 0.0
+
+    for position in range(len(df)):
+        latest_fast = fast_ema.iloc[position]
+        latest_slow = slow_ema.iloc[position]
+        latest_atr = atr_values.iloc[position]
+        close_price = float(closes.iloc[position])
+
+        if pd.isna(latest_fast) or pd.isna(latest_slow) or pd.isna(latest_atr):
+            continue
+
+        previous_fast = fast_ema.iloc[position - 1] if position > 0 else pd.NA
+        previous_slow = slow_ema.iloc[position - 1] if position > 0 else pd.NA
+        if pd.isna(previous_fast) or pd.isna(previous_slow):
+            continue
+
+        bullish_cross = float(previous_fast) <= float(previous_slow) and float(latest_fast) > float(latest_slow)
+        bearish_cross = float(previous_fast) >= float(previous_slow) and float(latest_fast) < float(latest_slow)
+
+        if not in_position and bullish_cross:
+            signals.iloc[position] = "buy"
+            in_position = True
+            highest_close = close_price
+            continue
+
+        if in_position:
+            highest_close = max(highest_close, close_price)
+            atr_stop = highest_close - (float(latest_atr) * atr_multiplier)
+            if bearish_cross or close_price <= atr_stop:
+                signals.iloc[position] = "sell"
+                in_position = False
+                highest_close = 0.0
+
+    return signals
+
+
+def generate_signals(df: pd.DataFrame, strategy: dict[str, Any]) -> pd.Series:
+    strategy_id = get_active_strategy_id(strategy)
+    if strategy_id == "ema_atr_trend":
+        return generate_ema_atr_trend_signals(df, strategy)
+    return generate_rsi_signals(df, strategy)
