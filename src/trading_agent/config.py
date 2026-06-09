@@ -139,9 +139,36 @@ def validate_goal(goal: dict[str, Any]) -> dict[str, Any]:
     return goal
 
 
+def validate_research_policy(policy: dict[str, Any]) -> dict[str, Any]:
+    policy = _require_mapping(policy, "research_policy")
+    comparison_acceptance = _require_mapping(
+        policy.get("comparison_acceptance"),
+        "research_policy.comparison_acceptance",
+    )
+
+    required_keys = [
+        "min_total_trades",
+        "min_windows_with_trades",
+        "min_positive_expectancy_windows",
+        "min_average_expectancy",
+        "min_average_profit_factor",
+    ]
+    for key in required_keys:
+        if key not in comparison_acceptance:
+            raise ValueError(f"research_policy.comparison_acceptance missing required field: {key}")
+        if not _is_numeric(comparison_acceptance[key]):
+            raise ValueError(f"research_policy.comparison_acceptance.{key} must be numeric")
+
+    return policy
+
+
 def load_strategy(path: str | Path = "config/strategy.yaml") -> dict[str, Any]:
     return validate_strategy(load_yaml(path))
 
 
 def load_goal(path: str | Path = "config/goal.yaml") -> dict[str, Any]:
     return validate_goal(load_yaml(path))
+
+
+def load_research_policy(path: str | Path = "config/research_policy.yaml") -> dict[str, Any]:
+    return validate_research_policy(load_yaml(path))
