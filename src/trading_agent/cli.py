@@ -119,6 +119,65 @@ def split_dataframe_windows(df: pd.DataFrame, windows: int) -> list[pd.DataFrame
     return result
 
 
+def summarize_window_results_by_strategy(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+
+    for window_result in results:
+        for strategy_result in window_result.get("strategies", []):
+            strategy_id = str(strategy_result["strategy_id"])
+            summary = grouped.setdefault(
+                strategy_id,
+                {
+                    "strategy_id": strategy_id,
+                    "windows": 0,
+                    "windows_with_trades": 0,
+                    "total_trades": 0,
+                    "positive_expectancy_windows": 0,
+                    "expectancy_values": [],
+                    "profit_factor_values": [],
+                    "max_drawdown_values": [],
+                },
+            )
+
+            closed_trades = int(strategy_result.get("closed_trades", 0))
+            expectancy = float(strategy_result.get("expectancy", 0.0))
+            profit_factor = strategy_result.get("profit_factor")
+
+            summary["windows"] += 1
+            summary["total_trades"] += closed_trades
+            if closed_trades > 0:
+                summary["windows_with_trades"] += 1
+            if expectancy > 0:
+                summary["positive_expectancy_windows"] += 1
+
+            summary["expectancy_values"].append(expectancy)
+            if profit_factor is not None:
+                summary["profit_factor_values"].append(float(profit_factor))
+            if "max_drawdown" in strategy_result:
+                summary["max_drawdown_values"].append(float(strategy_result["max_drawdown"]))
+
+    strategy_summaries = []
+    for summary in grouped.values():
+        expectancy_values = summary.pop("expectancy_values")
+        profit_factor_values = summary.pop("profit_factor_values")
+        max_drawdown_values = summary.pop("max_drawdown_values")
+        summary["average_expectancy"] = (
+            sum(expectancy_values) / len(expectancy_values)
+            if expectancy_values
+            else None
+        )
+        summary["average_profit_factor"] = (
+            sum(profit_factor_values) / len(profit_factor_values)
+            if profit_factor_values
+            else None
+        )
+        if max_drawdown_values:
+            summary["worst_max_drawdown"] = max(max_drawdown_values)
+        strategy_summaries.append(summary)
+
+    return strategy_summaries
+
+
 @app.command("check")
 def check() -> None:
     """Validate configuration and ensure state files exist."""
@@ -640,6 +699,7 @@ def compare_strategies_windows_csv(
         "gaps_detected": int(len(gaps)),
         "gaps": gaps,
         "results": results,
+        "summary_by_strategy": summarize_window_results_by_strategy(results),
         "output_dir": str(outputs_dir),
         "report_path": str(report_path),
     }
