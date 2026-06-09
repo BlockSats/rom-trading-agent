@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import typer
 import yaml
 
@@ -81,6 +82,41 @@ def build_strategy_variant(base_strategy: dict[str, Any], strategy_id: str) -> d
         raise ValueError(f"unsupported strategy_id: {strategy_id}")
 
     return validate_strategy(strategy)
+
+
+def summarize_strategy_on_dataframe(
+    ohlcv: pd.DataFrame,
+    strategy: dict[str, Any],
+    goal: dict[str, Any],
+) -> dict[str, Any]:
+    strategy_id = get_active_strategy_id(strategy)
+    backtest_result = run_backtest(ohlcv, strategy)
+    score_result = score_trades(backtest_result["trades"], goal)
+    summary = summarize_backtest(backtest_result["trades"], score_result)
+    return {
+        "strategy_id": strategy_id,
+        "initial_balance": backtest_result["initial_balance"],
+        **summary,
+        "winrate": score_result["winrate"],
+        "profit_factor": score_result["profit_factor"],
+        "expectancy": score_result["expectancy"],
+    }
+
+
+def split_dataframe_windows(df: pd.DataFrame, windows: int) -> list[pd.DataFrame]:
+    rows = len(df)
+    base_size = rows // windows
+    extra_rows = rows % windows
+    result = []
+    start = 0
+
+    for window_index in range(windows):
+        size = base_size + (1 if window_index < extra_rows else 0)
+        end = start + size
+        result.append(df.iloc[start:end].copy())
+        start = end
+
+    return result
 
 
 @app.command("check")
@@ -513,19 +549,7 @@ def compare_strategies_csv(path: Path) -> None:
     strategies = []
     for strategy_id in ["rsi_baseline", "ema_atr_trend"]:
         strategy = build_strategy_variant(base_strategy, strategy_id)
-        backtest_result = run_backtest(ohlcv, strategy)
-        score_result = score_trades(backtest_result["trades"], goal)
-        summary = summarize_backtest(backtest_result["trades"], score_result)
-        strategies.append(
-            {
-                "strategy_id": strategy_id,
-                "initial_balance": backtest_result["initial_balance"],
-                **summary,
-                "winrate": score_result["winrate"],
-                "profit_factor": score_result["profit_factor"],
-                "expectancy": score_result["expectancy"],
-            }
-        )
+        strategies.append(summarize_strategy_on_dataframe(ohlcv, strategy, goal))
 
     outputs_dir = Path("outputs")
     outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -537,6 +561,85 @@ def compare_strategies_csv(path: Path) -> None:
         "gaps_detected": int(len(gaps)),
         "gaps": gaps,
         "strategies": strategies,
+        "output_dir": str(outputs_dir),
+        "report_path": str(report_path),
+    }
+
+    write_json(report_path, report)
+    echo_json(report)
+
+
+@app.command("compare-strategies-windows-csv")
+def compare_strategies_windows_csv(
+    path: Path,
+    windows: int = typer.Option(
+        4,
+        "--windows",
+        help="Number of chronological windows used for strategy comparison.",
+    ),
+) -> None:
+    """Compare strategy candidates across chronological windows from one local OHLCV CSV."""
+    ohlcv = load_ohlcv_csv(path)
+
+    if windows < 2:
+        echo_json(
+            {
+                "command": "compare-strategies-windows-csv",
+                "status": "failed",
+                "reason": "windows_must_be_at_least_2",
+                "windows": windows,
+            }
+        )
+        raise typer.Exit(code=1)
+    if windows > len(ohlcv):
+        echo_json(
+            {
+                "command": "compare-strategies-windows-csv",
+                "status": "failed",
+                "reason": "windows_must_not_exceed_rows",
+                "windows": windows,
+                "rows": int(len(ohlcv)),
+            }
+        )
+        raise typer.Exit(code=1)
+
+    gaps = detect_time_gaps(ohlcv)
+    base_strategy = load_strategy()
+    goal = load_goal()
+    strategy_variants = [
+        build_strategy_variant(base_strategy, "rsi_baseline"),
+        build_strategy_variant(base_strategy, "ema_atr_trend"),
+    ]
+
+    results = []
+    start_index = 0
+    for window_number, window_df in enumerate(split_dataframe_windows(ohlcv, windows), start=1):
+        end_index = start_index + len(window_df) - 1
+        results.append(
+            {
+                "window": window_number,
+                "start_index": int(start_index),
+                "end_index": int(end_index),
+                "rows": int(len(window_df)),
+                "strategies": [
+                    summarize_strategy_on_dataframe(window_df, strategy, goal)
+                    for strategy in strategy_variants
+                ],
+            }
+        )
+        start_index = end_index + 1
+
+    outputs_dir = Path("outputs")
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    report_path = outputs_dir / "strategy_windows_comparison_report.json"
+    report = {
+        "command": "compare-strategies-windows-csv",
+        "csv_path": str(path),
+        "rows": int(len(ohlcv)),
+        "windows": windows,
+        "gaps_detected": int(len(gaps)),
+        "gaps": gaps,
+        "results": results,
         "output_dir": str(outputs_dir),
         "report_path": str(report_path),
     }
