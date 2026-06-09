@@ -51,8 +51,8 @@ reflection_every_closed_trades: 5
     )
 
 
-def _write_csv(tmp_path: Path, with_gap: bool = True) -> Path:
-    df = generate_sample_ohlcv(rows=50, seed=42)
+def _write_csv(tmp_path: Path, with_gap: bool = True, rows: int = 50) -> Path:
+    df = generate_sample_ohlcv(rows=rows, seed=42)
     if with_gap:
         df.loc[20:, "timestamp"] = df.loc[20:, "timestamp"] + pd.Timedelta(hours=1)
     csv_path = tmp_path / "data.csv"
@@ -142,3 +142,74 @@ def test_compare_strategies_csv_creates_report_and_leaves_state_untouched(tmp_pa
         "rsi_baseline",
         "ema_atr_trend",
     }
+
+
+def test_compare_strategies_windows_csv_creates_report_and_leaves_state_untouched(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    csv_path = _write_csv(tmp_path, with_gap=False, rows=80)
+    monkeypatch.chdir(tmp_path)
+
+    before_trades = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
+    before_hypotheses = (tmp_path / "state" / "hypotheses.jsonl").read_text(encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(app, ["compare-strategies-windows-csv", str(csv_path), "--windows", "4"])
+
+    assert result.exit_code == 0, result.output
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    assert report_path.exists()
+    assert (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8") == before_trades
+    assert (tmp_path / "state" / "hypotheses.jsonl").read_text(encoding="utf-8") == before_hypotheses
+
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-windows-csv"
+    assert payload["windows"] == 4
+    assert payload["rows"] == 80
+    assert payload["gaps_detected"] == 0
+    assert payload["report_path"] == "outputs/strategy_windows_comparison_report.json"
+    assert len(payload["results"]) == 4
+    assert sum(window["rows"] for window in payload["results"]) == 80
+
+    for window in payload["results"]:
+        assert {strategy["strategy_id"] for strategy in window["strategies"]} == {
+            "rsi_baseline",
+            "ema_atr_trend",
+        }
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert len(report["results"]) == 4
+
+
+def test_compare_strategies_windows_csv_rejects_too_few_windows(tmp_path: Path, monkeypatch) -> None:
+    _write_config(tmp_path)
+    csv_path = _write_csv(tmp_path, with_gap=False)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["compare-strategies-windows-csv", str(csv_path), "--windows", "1"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-windows-csv"
+    assert payload["status"] == "failed"
+    assert payload["reason"] == "windows_must_be_at_least_2"
+    assert payload["windows"] == 1
+
+
+def test_compare_strategies_windows_csv_rejects_more_windows_than_rows(tmp_path: Path, monkeypatch) -> None:
+    _write_config(tmp_path)
+    csv_path = _write_csv(tmp_path, with_gap=False)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["compare-strategies-windows-csv", str(csv_path), "--windows", "51"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-windows-csv"
+    assert payload["status"] == "failed"
+    assert payload["reason"] == "windows_must_not_exceed_rows"
+    assert payload["windows"] == 51
+    assert payload["rows"] == 50
