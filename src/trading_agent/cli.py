@@ -178,6 +178,30 @@ def summarize_window_results_by_strategy(results: list[dict[str, Any]]) -> list[
     return strategy_summaries
 
 
+def load_comparison_report(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        typer.echo("Comparison report not found", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        typer.echo("Invalid comparison report JSON", err=True)
+        raise typer.Exit(code=1)
+
+    if not isinstance(payload, dict):
+        typer.echo("Invalid comparison report JSON", err=True)
+        raise typer.Exit(code=1)
+    if "summary_by_strategy" not in payload:
+        typer.echo("Comparison report missing summary_by_strategy", err=True)
+        raise typer.Exit(code=1)
+    if not isinstance(payload["summary_by_strategy"], list):
+        typer.echo("Comparison report missing summary_by_strategy", err=True)
+        raise typer.Exit(code=1)
+
+    return payload
+
+
 @app.command("check")
 def check() -> None:
     """Validate configuration and ensure state files exist."""
@@ -706,6 +730,40 @@ def compare_strategies_windows_csv(
 
     write_json(report_path, report)
     echo_json(report)
+
+
+@app.command("show-comparison-report")
+def show_comparison_report(
+    path: Path = typer.Option(
+        Path("outputs/strategy_windows_comparison_report.json"),
+        "--path",
+        help="Path to a strategy windows comparison report JSON.",
+    ),
+) -> None:
+    """Read and display a previously generated strategy comparison report."""
+    report = load_comparison_report(path)
+
+    typer.echo("Comparison report")
+    if "command" in report:
+        typer.echo(f"  Command: {report.get('command')}")
+    typer.echo(f"  CSV path: {report.get('csv_path')}")
+    typer.echo(f"  Rows: {report.get('rows')}")
+    typer.echo(f"  Windows: {report.get('windows')}")
+    typer.echo(f"  Gaps detected: {report.get('gaps_detected')}")
+    if "report_path" in report:
+        typer.echo(f"  Report path: {report.get('report_path')}")
+    typer.echo("")
+    typer.echo("Summary by strategy")
+
+    for strategy_summary in report["summary_by_strategy"]:
+        typer.echo(f"  {strategy_summary.get('strategy_id')}")
+        typer.echo(f"    Windows: {strategy_summary.get('windows')}")
+        typer.echo(f"    Windows with trades: {strategy_summary.get('windows_with_trades')}")
+        typer.echo(f"    Total trades: {strategy_summary.get('total_trades')}")
+        typer.echo(f"    Positive expectancy windows: {strategy_summary.get('positive_expectancy_windows')}")
+        typer.echo(f"    Average expectancy: {strategy_summary.get('average_expectancy')}")
+        typer.echo(f"    Average profit factor: {strategy_summary.get('average_profit_factor')}")
+        typer.echo("")
 
 
 @app.command("reflect")
