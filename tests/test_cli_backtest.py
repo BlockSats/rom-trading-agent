@@ -171,6 +171,11 @@ def test_compare_strategies_windows_csv_creates_report_and_leaves_state_untouche
     assert payload["report_path"] == "outputs/strategy_windows_comparison_report.json"
     assert len(payload["results"]) == 4
     assert sum(window["rows"] for window in payload["results"]) == 80
+    assert "best_strategy" not in payload
+    assert {summary["strategy_id"] for summary in payload["summary_by_strategy"]} == {
+        "rsi_baseline",
+        "ema_atr_trend",
+    }
 
     for window in payload["results"]:
         assert {strategy["strategy_id"] for strategy in window["strategies"]} == {
@@ -178,8 +183,21 @@ def test_compare_strategies_windows_csv_creates_report_and_leaves_state_untouche
             "ema_atr_trend",
         }
 
+    for summary in payload["summary_by_strategy"]:
+        assert summary["windows"] == 4
+        assert "total_trades" in summary
+        assert "positive_expectancy_windows" in summary
+        assert "average_expectancy" in summary
+        assert "average_profit_factor" in summary
+
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert len(report["results"]) == 4
+    assert "summary_by_strategy" in report
+    assert "best_strategy" not in report
+    assert {summary["strategy_id"] for summary in report["summary_by_strategy"]} == {
+        "rsi_baseline",
+        "ema_atr_trend",
+    }
 
 
 def test_compare_strategies_windows_csv_rejects_too_few_windows(tmp_path: Path, monkeypatch) -> None:
