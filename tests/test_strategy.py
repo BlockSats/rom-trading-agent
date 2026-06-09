@@ -25,6 +25,30 @@ def test_sample_data_can_run_through_strategy() -> None:
     assert isinstance(trades, list)
 
 
+def test_ema_atr_trend_can_run_through_strategy() -> None:
+    strategy = {
+        "version": "0001",
+        "strategy_id": "ema_atr_trend",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {
+            "indicator": "ema_atr",
+            "fast_ema_period": 2,
+            "slow_ema_period": 4,
+            "direction": "long",
+        },
+        "exit": {"atr_period": 2, "atr_stop_multiplier": 1.5},
+        "risk": {"stop_loss_pct": 2.0, "position_size_pct": 10.0},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.fast_ema_period"]},
+    }
+    df = generate_sample_ohlcv(rows=50, seed=42)
+
+    trades = run_strategy_on_dataframe(df, strategy)
+
+    assert isinstance(trades, list)
+
+
 def test_generated_sample_data_is_deterministic_with_same_seed() -> None:
     first = generate_sample_ohlcv(rows=25, seed=7)
     second = generate_sample_ohlcv(rows=25, seed=7)
@@ -35,4 +59,3 @@ def test_no_live_trading_components_exist() -> None:
     source = inspect.getsource(broker_paper).lower()
     forbidden = ["ccxt", "binance", "kraken", "websocket", "api key", "private key"]
     assert not any(token in source for token in forbidden)
-

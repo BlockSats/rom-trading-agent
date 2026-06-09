@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from typer.testing import CliRunner
 
@@ -8,6 +9,50 @@ from trading_agent.cli import app
 
 
 runner = CliRunner()
+
+
+def _write_ema_atr_config(tmp_path: Path) -> None:
+    (tmp_path / "config").mkdir()
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "trades.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "state" / "hypotheses.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "config" / "strategy.yaml").write_text(
+        """
+version: "0001"
+strategy_id: ema_atr_trend
+asset: "BTC/USDT"
+timeframe: "1h"
+entry:
+  indicator: "ema_atr"
+  fast_ema_period: 2
+  slow_ema_period: 4
+  direction: "long"
+exit:
+  atr_period: 2
+  atr_stop_multiplier: 1.5
+risk:
+  stop_loss_pct: 2.0
+  position_size_pct: 10.0
+costs:
+  fee_pct: 0.10
+  slippage_pct: 0.05
+reflection:
+  one_variable_only: true
+  allowed_variables:
+    - "entry.fast_ema_period"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "config" / "goal.yaml").write_text(
+        """
+asset: "BTC/USDT"
+target_return_30d: 0.05
+max_drawdown: 0.08
+min_sharpe: 1.2
+reflection_every_closed_trades: 5
+""",
+        encoding="utf-8",
+    )
 
 
 def test_status_command() -> None:
@@ -31,6 +76,18 @@ def test_config_command_default_readable() -> None:
     assert "Version:" in result.stdout
     assert "Goal" in result.stdout
     assert "Target return 30d:" in result.stdout
+
+
+def test_config_command_default_readable_for_ema_atr_trend(tmp_path: Path, monkeypatch) -> None:
+    _write_ema_atr_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["config"])
+
+    assert result.exit_code == 0
+    assert "Strategy ID: ema_atr_trend" in result.stdout
+    assert "Entry: EMA 2/4 trend" in result.stdout
+    assert "Exit: ATR 2 x 1.5" in result.stdout
 
 
 def test_config_command_all() -> None:

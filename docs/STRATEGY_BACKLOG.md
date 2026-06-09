@@ -20,8 +20,10 @@ Statuses:
 
 ## Candidate 002 - EMA / ATR Trend Following
 
-- Status: planned
+- Status: testing
+- Strategy ID: `ema_atr_trend`
 - Idea: Follow trend direction with EMA structure and use ATR for volatility-aware exits or stops.
+- Current implementation: Long-only EMA fast/slow crossover entry with an ATR trailing stop or bearish EMA crossover exit.
 - Data needed: Clean OHLCV with enough history for trend and volatility windows.
 - Timeframes: 1h and 4h.
 - Metrics to watch: Expectancy, profit factor, drawdown, trade count.

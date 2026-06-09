@@ -7,7 +7,7 @@ from typing import Any
 import yaml
 
 
-SUPPORTED_STRATEGY_IDS = {"rsi_baseline"}
+SUPPORTED_STRATEGY_IDS = {"rsi_baseline", "ema_atr_trend"}
 DEFAULT_STRATEGY_ID = "rsi_baseline"
 
 
@@ -37,6 +37,34 @@ def get_active_strategy_id(strategy: dict[str, Any]) -> str:
     return strategy_id
 
 
+def _require_positive_int(mapping: dict[str, Any], key: str, name: str) -> None:
+    value = mapping.get(key)
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ValueError(f"{name}.{key} must be a positive integer")
+
+
+def _require_positive_number(mapping: dict[str, Any], key: str, name: str) -> None:
+    value = mapping.get(key)
+    if not _is_numeric(value) or float(value) <= 0:
+        raise ValueError(f"{name}.{key} must be numeric and > 0")
+
+
+def _validate_rsi_baseline(entry: dict[str, Any], exit_: dict[str, Any]) -> None:
+    if "threshold" not in entry or not _is_numeric(entry["threshold"]):
+        raise ValueError("strategy.entry.threshold must be numeric")
+    if "rsi_take_profit" not in exit_ or not _is_numeric(exit_["rsi_take_profit"]):
+        raise ValueError("strategy.exit.rsi_take_profit must be numeric")
+
+
+def _validate_ema_atr_trend(entry: dict[str, Any], exit_: dict[str, Any]) -> None:
+    _require_positive_int(entry, "fast_ema_period", "strategy.entry")
+    _require_positive_int(entry, "slow_ema_period", "strategy.entry")
+    if int(entry["fast_ema_period"]) >= int(entry["slow_ema_period"]):
+        raise ValueError("strategy.entry.fast_ema_period must be lower than strategy.entry.slow_ema_period")
+    _require_positive_int(exit_, "atr_period", "strategy.exit")
+    _require_positive_number(exit_, "atr_stop_multiplier", "strategy.exit")
+
+
 def validate_strategy(strategy: dict[str, Any]) -> dict[str, Any]:
     strategy = _require_mapping(strategy, "strategy")
     required_keys = ["version", "asset", "timeframe", "entry", "exit", "risk", "costs", "reflection"]
@@ -61,10 +89,10 @@ def validate_strategy(strategy: dict[str, Any]) -> dict[str, Any]:
     costs = _require_mapping(strategy["costs"], "strategy.costs")
     reflection = _require_mapping(strategy["reflection"], "strategy.reflection")
 
-    if "threshold" not in entry or not _is_numeric(entry["threshold"]):
-        raise ValueError("strategy.entry.threshold must be numeric")
-    if "rsi_take_profit" not in exit_ or not _is_numeric(exit_["rsi_take_profit"]):
-        raise ValueError("strategy.exit.rsi_take_profit must be numeric")
+    if strategy_id == "rsi_baseline":
+        _validate_rsi_baseline(entry, exit_)
+    elif strategy_id == "ema_atr_trend":
+        _validate_ema_atr_trend(entry, exit_)
     if "stop_loss_pct" not in risk or not _is_numeric(risk["stop_loss_pct"]) or float(risk["stop_loss_pct"]) <= 0:
         raise ValueError("strategy.risk.stop_loss_pct must be numeric and > 0")
     if "position_size_pct" not in risk or not _is_numeric(risk["position_size_pct"]) or not (

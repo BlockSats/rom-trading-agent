@@ -5,7 +5,8 @@ from typing import Any
 import pandas as pd
 
 from trading_agent.broker_paper import PaperBroker
-from trading_agent.signals import evaluate_rsi_signal, generate_signals
+from trading_agent.config import get_active_strategy_id
+from trading_agent.signals import generate_signals
 
 
 def _serialize_timestamp(value: Any) -> Any:
@@ -23,6 +24,7 @@ def run_strategy_on_dataframe(
         raise ValueError("dataframe must contain a close column")
 
     signals = generate_signals(df, strategy)
+    signal_exit_reason = "rsi_take_profit" if get_active_strategy_id(strategy) == "rsi_baseline" else "strategy_exit"
 
     broker = PaperBroker(initial_balance=initial_balance)
     closed_trades: list[dict[str, Any]] = []
@@ -44,7 +46,7 @@ def run_strategy_on_dataframe(
             stop_loss_price = entry_price * (1 - stop_loss_pct / 100.0)
             if close_price <= stop_loss_price or signal == "sell":
                 trade = broker.sell(close_price, fee_pct=fee_pct, slippage_pct=slippage_pct)
-                trade["reason"] = "stop_loss" if close_price <= stop_loss_price else "rsi_take_profit"
+                trade["reason"] = "stop_loss" if close_price <= stop_loss_price else signal_exit_reason
                 if timestamp is not None:
                     trade["exit_timestamp"] = _serialize_timestamp(timestamp)
                 closed_trades.append(trade)
