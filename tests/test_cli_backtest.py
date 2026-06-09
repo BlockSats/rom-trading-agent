@@ -14,6 +14,7 @@ def _write_config(tmp_path: Path) -> None:
     (tmp_path / "config").mkdir()
     (tmp_path / "state").mkdir()
     (tmp_path / "state" / "trades.jsonl").write_text('{"sentinel": true}\n', encoding="utf-8")
+    (tmp_path / "state" / "hypotheses.jsonl").write_text('{"sentinel": true}\n', encoding="utf-8")
     (tmp_path / "config" / "strategy.yaml").write_text(
         """
 version: "0001"
@@ -108,3 +109,36 @@ def test_backtest_cli_writes_to_custom_output_dir(tmp_path: Path, monkeypatch) -
     assert payload["output_dir"] == str(custom_dir)
     assert payload["report_path"] == str(report_path)
     assert payload["trades_path"] == str(trades_path)
+
+
+def test_compare_strategies_csv_creates_report_and_leaves_state_untouched(tmp_path: Path, monkeypatch) -> None:
+    _write_config(tmp_path)
+    csv_path = _write_csv(tmp_path, with_gap=False)
+    monkeypatch.chdir(tmp_path)
+
+    before_trades = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
+    before_hypotheses = (tmp_path / "state" / "hypotheses.jsonl").read_text(encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(app, ["compare-strategies-csv", str(csv_path)])
+
+    assert result.exit_code == 0, result.output
+    report_path = tmp_path / "outputs" / "strategy_comparison_report.json"
+    assert report_path.exists()
+    assert (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8") == before_trades
+    assert (tmp_path / "state" / "hypotheses.jsonl").read_text(encoding="utf-8") == before_hypotheses
+
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-csv"
+    assert payload["rows"] == 50
+    assert payload["gaps_detected"] == 0
+    assert payload["report_path"] == "outputs/strategy_comparison_report.json"
+    assert {strategy["strategy_id"] for strategy in payload["strategies"]} == {
+        "rsi_baseline",
+        "ema_atr_trend",
+    }
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert {strategy["strategy_id"] for strategy in report["strategies"]} == {
+        "rsi_baseline",
+        "ema_atr_trend",
+    }
