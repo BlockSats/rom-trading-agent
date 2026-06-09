@@ -231,3 +231,84 @@ def test_compare_strategies_windows_csv_rejects_more_windows_than_rows(tmp_path:
     assert payload["reason"] == "windows_must_not_exceed_rows"
     assert payload["windows"] == 51
     assert payload["rows"] == 50
+
+
+def test_show_comparison_report_displays_summary(tmp_path: Path, monkeypatch) -> None:
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 80,
+                "windows": 4,
+                "gaps_detected": 0,
+                "report_path": "outputs/strategy_windows_comparison_report.json",
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "rsi_baseline",
+                        "windows": 4,
+                        "windows_with_trades": 2,
+                        "total_trades": 12,
+                        "positive_expectancy_windows": 1,
+                        "average_expectancy": 0.12,
+                        "average_profit_factor": 1.35,
+                    },
+                    {
+                        "strategy_id": "ema_atr_trend",
+                        "windows": 4,
+                        "windows_with_trades": 3,
+                        "total_trades": 9,
+                        "positive_expectancy_windows": 2,
+                        "average_expectancy": 0.18,
+                        "average_profit_factor": 1.48,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    assert result.exit_code == 0
+    assert "Comparison report" in result.stdout
+    assert "Summary by strategy" in result.stdout
+    assert "rsi_baseline" in result.stdout
+    assert "ema_atr_trend" in result.stdout
+    assert "Average expectancy" in result.stdout
+    assert "Average profit factor" in result.stdout
+    assert "best_strategy" not in result.stdout
+
+
+def test_show_comparison_report_rejects_missing_file(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report", "--path", str(tmp_path / "missing.json")])
+
+    assert result.exit_code == 1
+    assert "Comparison report not found" in result.stderr
+
+
+def test_show_comparison_report_rejects_invalid_json(tmp_path: Path) -> None:
+    report_path = tmp_path / "bad.json"
+    report_path.write_text("{not-json", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 1
+    assert "Invalid comparison report JSON" in result.stderr
+
+
+def test_show_comparison_report_rejects_missing_summary(tmp_path: Path) -> None:
+    report_path = tmp_path / "missing-summary.json"
+    report_path.write_text(json.dumps({"command": "compare-strategies-windows-csv"}), encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 1
+    assert "Comparison report missing summary_by_strategy" in result.stderr
