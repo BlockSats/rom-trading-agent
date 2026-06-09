@@ -14,6 +14,7 @@ from trading_agent.backtest import run_backtest, summarize_backtest
 from trading_agent.config import (
     get_active_strategy_id,
     load_goal,
+    load_research_policy,
     load_strategy,
     validate_goal,
     validate_strategy,
@@ -34,12 +35,6 @@ from trading_agent.storage import (
 )
 
 app = typer.Typer(add_completion=False)
-
-MIN_TOTAL_TRADES = 10
-MIN_WINDOWS_WITH_TRADES = 2
-MIN_POSITIVE_EXPECTANCY_WINDOWS = 2
-MIN_AVERAGE_EXPECTANCY = 0.0
-MIN_AVERAGE_PROFIT_FACTOR = 1.1
 
 
 def echo_json(payload: dict[str, Any]) -> None:
@@ -184,25 +179,32 @@ def summarize_window_results_by_strategy(results: list[dict[str, Any]]) -> list[
     return strategy_summaries
 
 
-def classify_strategy_summary(summary: dict[str, Any]) -> str:
+def classify_strategy_summary(summary: dict[str, Any], research_policy: dict[str, Any]) -> str:
+    thresholds = research_policy["comparison_acceptance"]
+    min_total_trades = int(thresholds["min_total_trades"])
+    min_windows_with_trades = int(thresholds["min_windows_with_trades"])
+    min_positive_expectancy_windows = int(thresholds["min_positive_expectancy_windows"])
+    min_average_expectancy = float(thresholds["min_average_expectancy"])
+    min_average_profit_factor = float(thresholds["min_average_profit_factor"])
+
     total_trades = int(summary.get("total_trades", 0))
     windows_with_trades = int(summary.get("windows_with_trades", 0))
     positive_expectancy_windows = int(summary.get("positive_expectancy_windows", 0))
     average_expectancy = summary.get("average_expectancy")
     average_profit_factor = summary.get("average_profit_factor")
 
-    if total_trades < MIN_TOTAL_TRADES or windows_with_trades < MIN_WINDOWS_WITH_TRADES:
+    if total_trades < min_total_trades or windows_with_trades < min_windows_with_trades:
         return "insufficient_trades"
 
     if (
         average_expectancy is None
-        or float(average_expectancy) <= MIN_AVERAGE_EXPECTANCY
+        or float(average_expectancy) <= min_average_expectancy
         or average_profit_factor is None
-        or float(average_profit_factor) < MIN_AVERAGE_PROFIT_FACTOR
+        or float(average_profit_factor) < min_average_profit_factor
     ):
         return "weak"
 
-    if positive_expectancy_windows < MIN_POSITIVE_EXPECTANCY_WINDOWS:
+    if positive_expectancy_windows < min_positive_expectancy_windows:
         return "watchlist"
 
     return "candidate"
@@ -772,6 +774,8 @@ def show_comparison_report(
 ) -> None:
     """Read and display a previously generated strategy comparison report."""
     report = load_comparison_report(path)
+    research_policy = load_research_policy()
+    thresholds = research_policy["comparison_acceptance"]
 
     typer.echo("Comparison report")
     if "command" in report:
@@ -784,17 +788,17 @@ def show_comparison_report(
         typer.echo(f"  Report path: {report.get('report_path')}")
     typer.echo("")
     typer.echo("Acceptance thresholds")
-    typer.echo(f"  Min total trades: {MIN_TOTAL_TRADES}")
-    typer.echo(f"  Min windows with trades: {MIN_WINDOWS_WITH_TRADES}")
-    typer.echo(f"  Min positive expectancy windows: {MIN_POSITIVE_EXPECTANCY_WINDOWS}")
-    typer.echo(f"  Min average expectancy: {MIN_AVERAGE_EXPECTANCY}")
-    typer.echo(f"  Min average profit factor: {MIN_AVERAGE_PROFIT_FACTOR}")
+    typer.echo(f"  Min total trades: {thresholds['min_total_trades']}")
+    typer.echo(f"  Min windows with trades: {thresholds['min_windows_with_trades']}")
+    typer.echo(f"  Min positive expectancy windows: {thresholds['min_positive_expectancy_windows']}")
+    typer.echo(f"  Min average expectancy: {thresholds['min_average_expectancy']}")
+    typer.echo(f"  Min average profit factor: {thresholds['min_average_profit_factor']}")
     typer.echo("")
     typer.echo("Summary by strategy")
 
     for strategy_summary in report["summary_by_strategy"]:
         typer.echo(f"  {strategy_summary.get('strategy_id')}")
-        typer.echo(f"    Research status: {classify_strategy_summary(strategy_summary)}")
+        typer.echo(f"    Research status: {classify_strategy_summary(strategy_summary, research_policy)}")
         typer.echo(f"    Windows: {strategy_summary.get('windows')}")
         typer.echo(f"    Windows with trades: {strategy_summary.get('windows_with_trades')}")
         typer.echo(f"    Total trades: {strategy_summary.get('total_trades')}")

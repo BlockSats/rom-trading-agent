@@ -1,0 +1,6 @@
+comparison_acceptance:
+  min_total_trades: 10
+  min_windows_with_trades: 2
+  min_positive_expectancy_windows: 2
+  min_average_expectancy: 0.0
+  min_average_profit_factor: 1.1

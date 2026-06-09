@@ -7,7 +7,24 @@ import pandas as pd
 from typer.testing import CliRunner
 
 from trading_agent.cli import app, classify_strategy_summary
+from trading_agent.config import load_research_policy
 from trading_agent.data import generate_sample_ohlcv
+
+
+def _write_research_policy(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "research_policy.yaml").write_text(
+        """
+comparison_acceptance:
+  min_total_trades: 10
+  min_windows_with_trades: 2
+  min_positive_expectancy_windows: 2
+  min_average_expectancy: 0.0
+  min_average_profit_factor: 1.1
+""",
+        encoding="utf-8",
+    )
 
 
 def _write_config(tmp_path: Path) -> None:
@@ -234,6 +251,8 @@ def test_compare_strategies_windows_csv_rejects_more_windows_than_rows(tmp_path:
 
 
 def test_classify_strategy_summary_returns_research_status() -> None:
+    research_policy = load_research_policy()
+
     assert classify_strategy_summary(
         {
             "total_trades": 9,
@@ -241,7 +260,8 @@ def test_classify_strategy_summary_returns_research_status() -> None:
             "positive_expectancy_windows": 4,
             "average_expectancy": 1.0,
             "average_profit_factor": 2.0,
-        }
+        },
+        research_policy,
     ) == "insufficient_trades"
     assert classify_strategy_summary(
         {
@@ -250,7 +270,8 @@ def test_classify_strategy_summary_returns_research_status() -> None:
             "positive_expectancy_windows": 2,
             "average_expectancy": -0.1,
             "average_profit_factor": 1.5,
-        }
+        },
+        research_policy,
     ) == "weak"
     assert classify_strategy_summary(
         {
@@ -259,7 +280,8 @@ def test_classify_strategy_summary_returns_research_status() -> None:
             "positive_expectancy_windows": 1,
             "average_expectancy": 0.1,
             "average_profit_factor": 1.1,
-        }
+        },
+        research_policy,
     ) == "watchlist"
     assert classify_strategy_summary(
         {
@@ -268,11 +290,13 @@ def test_classify_strategy_summary_returns_research_status() -> None:
             "positive_expectancy_windows": 2,
             "average_expectancy": 0.1,
             "average_profit_factor": 1.1,
-        }
+        },
+        research_policy,
     ) == "candidate"
 
 
 def test_show_comparison_report_displays_summary(tmp_path: Path, monkeypatch) -> None:
+    _write_research_policy(tmp_path)
     report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
     report_path.parent.mkdir()
     report_path.write_text(
@@ -328,6 +352,7 @@ def test_show_comparison_report_displays_summary(tmp_path: Path, monkeypatch) ->
 
 
 def test_show_comparison_report_displays_all_research_statuses(tmp_path: Path, monkeypatch) -> None:
+    _write_research_policy(tmp_path)
     report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
     report_path.parent.mkdir()
     report_path.write_text(
