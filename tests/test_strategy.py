@@ -49,6 +49,39 @@ def test_ema_atr_trend_can_run_through_strategy() -> None:
     assert isinstance(trades, list)
 
 
+def test_ema_atr_trend_short_history_returns_no_trades() -> None:
+    strategy = {
+        "version": "0001",
+        "strategy_id": "ema_atr_trend",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {
+            "indicator": "ema_atr",
+            "fast_ema_period": 2,
+            "slow_ema_period": 4,
+            "direction": "long",
+        },
+        "exit": {"atr_period": 2, "atr_stop_multiplier": 1.5},
+        "risk": {"stop_loss_pct": 2.0, "position_size_pct": 10.0},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.fast_ema_period"]},
+    }
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2024-01-01", periods=3, freq="h"),
+            "open": [10.0, 11.0, 12.0],
+            "high": [11.0, 12.0, 13.0],
+            "low": [9.0, 10.0, 11.0],
+            "close": [10.0, 11.0, 12.0],
+            "volume": [1.0, 1.0, 1.0],
+        }
+    )
+
+    trades = run_strategy_on_dataframe(df, strategy)
+
+    assert trades == []
+
+
 def test_generated_sample_data_is_deterministic_with_same_seed() -> None:
     first = generate_sample_ohlcv(rows=25, seed=7)
     second = generate_sample_ohlcv(rows=25, seed=7)

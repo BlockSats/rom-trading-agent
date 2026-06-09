@@ -35,23 +35,33 @@ def generate_rsi_signals(df: pd.DataFrame, strategy: dict[str, Any]) -> pd.Serie
 
 
 def generate_ema_atr_trend_signals(df: pd.DataFrame, strategy: dict[str, Any]) -> pd.Series:
+    signals = pd.Series("hold", index=df.index, dtype="object")
     required_columns = {"high", "low", "close"}
     missing_columns = sorted(required_columns - set(df.columns))
     if missing_columns:
         raise ValueError(f"dataframe must contain columns: {', '.join(missing_columns)}")
 
+    fast_ema_period = int(strategy["entry"]["fast_ema_period"])
+    slow_ema_period = int(strategy["entry"]["slow_ema_period"])
+    atr_period = int(strategy["exit"]["atr_period"])
+    if fast_ema_period <= 0 or slow_ema_period <= 0 or atr_period <= 0:
+        raise ValueError("EMA and ATR periods must be positive")
+
+    minimum_required_rows = max(slow_ema_period, atr_period + 1)
+    if len(df) < minimum_required_rows:
+        return signals
+
     closes = df["close"].astype(float)
-    fast_ema = ema(closes.tolist(), int(strategy["entry"]["fast_ema_period"]))
-    slow_ema = ema(closes.tolist(), int(strategy["entry"]["slow_ema_period"]))
+    fast_ema = ema(closes.tolist(), fast_ema_period)
+    slow_ema = ema(closes.tolist(), slow_ema_period)
     atr_values = atr(
         df["high"].astype(float).tolist(),
         df["low"].astype(float).tolist(),
         closes.tolist(),
-        int(strategy["exit"]["atr_period"]),
+        atr_period,
     )
     atr_multiplier = float(strategy["exit"]["atr_stop_multiplier"])
 
-    signals = pd.Series("hold", index=df.index, dtype="object")
     in_position = False
     highest_close = 0.0
 

@@ -113,3 +113,13 @@ def test_generate_signals_ema_atr_requires_ohlc_columns() -> None:
         assert "dataframe must contain columns" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_generate_signals_ema_atr_short_history_returns_hold() -> None:
+    df = _ohlc_frame([10.0, 11.0, 12.0])
+
+    signals = generate_signals(df, _ema_atr_strategy())
+
+    assert len(signals) == len(df)
+    assert signals.index.equals(df.index)
+    assert set(signals) == {"hold"}
