@@ -1081,3 +1081,229 @@ def test_show_comparison_report_many_zero_trade_windows(tmp_path: Path, monkeypa
     # 8 - 1 = 7 inactive windows must be visible
     assert "Zero trade windows: 7" in result.stdout
     assert "best_strategy" not in result.stdout
+
+
+def test_compare_strategies_assets_csv_creates_report_and_leaves_state_untouched(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    btc_csv = tmp_path / "btc.csv"
+    eth_csv = tmp_path / "eth.csv"
+    generate_sample_ohlcv(rows=80, seed=42).to_csv(btc_csv, index=False)
+    generate_sample_ohlcv(rows=80, seed=99).to_csv(eth_csv, index=False)
+    monkeypatch.chdir(tmp_path)
+
+    before_trades = (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8")
+    before_hypotheses = (tmp_path / "state" / "hypotheses.jsonl").read_text(encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "compare-strategies-assets-csv",
+        "--asset", f"BTCUSDT:{btc_csv}",
+        "--asset", f"ETHUSDT:{eth_csv}",
+        "--windows", "4",
+    ])
+
+    assert result.exit_code == 0, result.output
+    report_path = tmp_path / "outputs" / "strategy_assets_comparison_report.json"
+    assert report_path.exists()
+    assert (tmp_path / "state" / "trades.jsonl").read_text(encoding="utf-8") == before_trades
+    assert (tmp_path / "state" / "hypotheses.jsonl").read_text(encoding="utf-8") == before_hypotheses
+
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-assets-csv"
+    assert payload["windows"] == 4
+    assert payload["report_path"] == "outputs/strategy_assets_comparison_report.json"
+    assert payload["output_dir"] == "outputs"
+    assert "best_strategy" not in payload
+    assert "best_asset" not in payload
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert "results_by_asset" in report
+    assert "best_strategy" not in report
+    assert "best_asset" not in report
+
+
+def test_compare_strategies_assets_csv_rejects_invalid_asset_format(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "compare-strategies-assets-csv",
+        "--asset", "BTCUSDT_no_colon.csv",
+        "--windows", "4",
+    ])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-assets-csv"
+    assert payload["status"] == "failed"
+    assert payload["reason"] == "invalid_asset_format"
+    assert payload["asset"] == "BTCUSDT_no_colon.csv"
+
+
+def test_compare_strategies_assets_csv_rejects_empty_symbol(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "compare-strategies-assets-csv",
+        "--asset", ":data/file.csv",
+        "--windows", "4",
+    ])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-assets-csv"
+    assert payload["status"] == "failed"
+    assert payload["reason"] == "empty_symbol"
+
+
+def test_compare_strategies_assets_csv_rejects_empty_csv_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "compare-strategies-assets-csv",
+        "--asset", "BTCUSDT:",
+        "--windows", "4",
+    ])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-assets-csv"
+    assert payload["status"] == "failed"
+    assert payload["reason"] == "empty_csv_path"
+
+
+def test_compare_strategies_assets_csv_rejects_too_few_windows(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    csv_path = _write_csv(tmp_path, with_gap=False, rows=80)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "compare-strategies-assets-csv",
+        "--asset", f"BTCUSDT:{csv_path}",
+        "--windows", "1",
+    ])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-assets-csv"
+    assert payload["status"] == "failed"
+    assert payload["reason"] == "windows_must_be_at_least_2"
+    assert payload["windows"] == 1
+
+
+def test_compare_strategies_assets_csv_rejects_more_windows_than_rows(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    csv_path = _write_csv(tmp_path, with_gap=False, rows=10)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "compare-strategies-assets-csv",
+        "--asset", f"BTCUSDT:{csv_path}",
+        "--windows", "20",
+    ])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["command"] == "compare-strategies-assets-csv"
+    assert payload["status"] == "failed"
+    assert payload["reason"] == "windows_must_not_exceed_rows"
+    assert payload["windows"] == 20
+    assert payload["rows"] == 10
+    assert payload["symbol"] == "BTCUSDT"
+
+
+def test_compare_strategies_assets_csv_results_by_asset_has_correct_symbols(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    btc_csv = tmp_path / "btc.csv"
+    eth_csv = tmp_path / "eth.csv"
+    generate_sample_ohlcv(rows=80, seed=42).to_csv(btc_csv, index=False)
+    generate_sample_ohlcv(rows=80, seed=99).to_csv(eth_csv, index=False)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "compare-strategies-assets-csv",
+        "--asset", f"BTCUSDT:{btc_csv}",
+        "--asset", f"ETHUSDT:{eth_csv}",
+        "--windows", "4",
+    ])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert set(payload["results_by_asset"].keys()) == {"BTCUSDT", "ETHUSDT"}
+    assert payload["assets"] == ["BTCUSDT", "ETHUSDT"]
+
+
+def test_compare_strategies_assets_csv_strategies_in_fixed_order(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    csv_path = _write_csv(tmp_path, with_gap=False, rows=80)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "compare-strategies-assets-csv",
+        "--asset", f"BTCUSDT:{csv_path}",
+        "--windows", "4",
+    ])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["strategies"] == ["rsi_baseline", "ema_atr_trend", "donchian_breakout"]
+
+
+def test_compare_strategies_assets_csv_has_no_forbidden_keys(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_config(tmp_path)
+    csv_path = _write_csv(tmp_path, with_gap=False, rows=80)
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, [
+        "compare-strategies-assets-csv",
+        "--asset", f"BTCUSDT:{csv_path}",
+        "--windows", "4",
+    ])
+
+    assert result.exit_code == 0, result.output
+    report_text = json.dumps(json.loads(result.stdout))
+    for forbidden in [
+        "best_strategy",
+        "best_asset",
+        "winner",
+        "global_score",
+        "selected_strategy",
+    ]:
+        assert forbidden not in report_text, f"Forbidden key found: {forbidden}"
