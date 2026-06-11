@@ -228,6 +228,60 @@ def classify_strategy_summary(summary: dict[str, Any], research_policy: dict[str
     return "candidate"
 
 
+def get_classification_reasons(
+    summary: dict[str, Any],
+    research_policy: dict[str, Any],
+    classification: str,
+) -> list[str]:
+    """Return diagnostic reasons explaining why a strategy received its classification.
+
+    Reasons are purely diagnostic — they never change the classification,
+    sort strategies, or select a best strategy.
+    """
+    thresholds = research_policy["comparison_acceptance"]
+    min_total_trades = int(thresholds["min_total_trades"])
+    min_windows_with_trades = int(thresholds["min_windows_with_trades"])
+    min_positive_expectancy_windows = int(thresholds["min_positive_expectancy_windows"])
+    min_average_expectancy = float(thresholds["min_average_expectancy"])
+    min_average_profit_factor = float(thresholds["min_average_profit_factor"])
+
+    total_trades = int(summary.get("total_trades", 0))
+    windows_with_trades = int(summary.get("windows_with_trades", 0))
+    positive_expectancy_windows = int(summary.get("positive_expectancy_windows", 0))
+    average_expectancy = summary.get("average_expectancy")
+    average_profit_factor = summary.get("average_profit_factor")
+
+    reasons: list[str] = []
+
+    if classification == "insufficient_trades":
+        if total_trades < min_total_trades:
+            reasons.append("insufficient_total_trades")
+        if windows_with_trades < min_windows_with_trades:
+            reasons.append("insufficient_windows_with_trades")
+        return reasons
+
+    if classification == "weak":
+        if average_expectancy is None or float(average_expectancy) <= min_average_expectancy:
+            reasons.append("average_expectancy_below_threshold")
+        if average_profit_factor is None or float(average_profit_factor) < min_average_profit_factor:
+            reasons.append("average_profit_factor_below_threshold")
+        return reasons
+
+    if classification == "watchlist":
+        reasons.append("insufficient_positive_expectancy_windows")
+        reasons.append("total_trades_above_threshold")
+        reasons.append("windows_with_trades_above_threshold")
+        return reasons
+
+    # candidate
+    reasons.append("total_trades_above_threshold")
+    reasons.append("windows_with_trades_above_threshold")
+    reasons.append("positive_expectancy_windows_above_threshold")
+    reasons.append("average_expectancy_above_threshold")
+    reasons.append("average_profit_factor_above_threshold")
+    return reasons
+
+
 def _load_report_json(path: Path, not_found_msg: str, invalid_msg: str) -> dict[str, Any]:
     if not path.exists():
         typer.echo(not_found_msg, err=True)
@@ -837,8 +891,13 @@ def show_comparison_report(
     typer.echo("Summary by strategy")
 
     for strategy_summary in report["summary_by_strategy"]:
+        classification = classify_strategy_summary(strategy_summary, research_policy)
+        reasons = get_classification_reasons(strategy_summary, research_policy, classification)
         typer.echo(f"  {strategy_summary.get('strategy_id')}")
-        typer.echo(f"    Research status: {classify_strategy_summary(strategy_summary, research_policy)}")
+        typer.echo(f"    Research status: {classification}")
+        typer.echo("    Reasons:")
+        for reason in reasons:
+            typer.echo(f"      - {reason}")
         typer.echo(f"    Windows: {strategy_summary.get('windows')}")
         typer.echo(f"    Windows with trades: {strategy_summary.get('windows_with_trades')}")
         typer.echo(f"    Total trades: {strategy_summary.get('total_trades')}")
