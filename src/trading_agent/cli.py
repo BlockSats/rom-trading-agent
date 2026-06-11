@@ -872,6 +872,60 @@ def show_research_report(
         typer.echo(f"  Classification: {payload['classification']}")
 
 
+@app.command("show-backtest-report")
+def show_backtest_report(
+    path: Path = typer.Option(
+        Path("outputs/backtest_report.json"),
+        "--path",
+        help="Path to a backtest report JSON.",
+    ),
+) -> None:
+    """Read and display a previously generated backtest report."""
+    if not path.exists():
+        typer.echo("Backtest report not found", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        typer.echo("Invalid backtest report JSON", err=True)
+        raise typer.Exit(code=1)
+
+    if not isinstance(payload, dict):
+        typer.echo("Invalid backtest report JSON", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo("Backtest report")
+    if "csv_path" in payload:
+        typer.echo(f"  CSV path: {payload['csv_path']}")
+    if "asset" in payload:
+        typer.echo(f"  Asset: {payload['asset']}")
+    if "timeframe" in payload:
+        typer.echo(f"  Timeframe: {payload['timeframe']}")
+    if "rows" in payload:
+        typer.echo(f"  Rows: {payload['rows']}")
+    if "gaps_detected" in payload:
+        typer.echo(f"  Gaps detected: {payload['gaps_detected']}")
+    if "initial_balance" in payload:
+        typer.echo(f"  Initial balance: {payload['initial_balance']}")
+    if "total_trades" in payload:
+        typer.echo(f"  Total trades: {payload['total_trades']}")
+    if "final_balance" in payload:
+        typer.echo(f"  Final balance: {payload['final_balance']}")
+    if "net_pnl" in payload:
+        typer.echo(f"  Net PnL: {payload['net_pnl']}")
+    if "winrate" in payload:
+        typer.echo(f"  Winrate: {payload['winrate']}")
+    if "profit_factor" in payload:
+        typer.echo(f"  Profit factor: {payload['profit_factor']}")
+    if "expectancy" in payload:
+        typer.echo(f"  Expectancy: {payload['expectancy']}")
+    if "score" in payload:
+        typer.echo(f"  Score: {payload['score']}")
+    if "classification" in payload:
+        typer.echo(f"  Classification: {payload['classification']}")
+
+
 @app.command("research-policy")
 def research_policy() -> None:
     """Display the current research policy configuration."""

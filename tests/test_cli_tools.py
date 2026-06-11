@@ -272,3 +272,104 @@ def test_show_research_report_default_path_missing(tmp_path: Path, monkeypatch) 
 
     assert result.exit_code == 1
     assert "Research report not found" in result.stderr
+
+
+def test_show_backtest_report_displays_full_report(tmp_path: Path) -> None:
+    report_path = tmp_path / "backtest_report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "asset": "BTC/USDT",
+                "timeframe": "1h",
+                "rows": 500,
+                "gaps_detected": 0,
+                "initial_balance": 10000.0,
+                "total_trades": 12,
+                "final_balance": 10250.0,
+                "net_pnl": 250.0,
+                "winrate": 0.58,
+                "profit_factor": 1.4,
+                "expectancy": 20.8,
+                "score": 72.5,
+                "classification": "candidate",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["show-backtest-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Backtest report" in result.stdout
+    assert "CSV path: data/BTCUSDT_1h.csv" in result.stdout
+    assert "Asset: BTC/USDT" in result.stdout
+    assert "Timeframe: 1h" in result.stdout
+    assert "Rows: 500" in result.stdout
+    assert "Gaps detected: 0" in result.stdout
+    assert "Initial balance: 10000.0" in result.stdout
+    assert "Total trades: 12" in result.stdout
+    assert "Final balance: 10250.0" in result.stdout
+    assert "Net PnL: 250.0" in result.stdout
+    assert "Winrate: 0.58" in result.stdout
+    assert "Profit factor: 1.4" in result.stdout
+    assert "Expectancy: 20.8" in result.stdout
+    assert "Score: 72.5" in result.stdout
+    assert "Classification: candidate" in result.stdout
+
+
+def test_show_backtest_report_partial_fields(tmp_path: Path) -> None:
+    report_path = tmp_path / "partial.json"
+    report_path.write_text(
+        json.dumps({"asset": "ETH/USDT", "rows": 200, "score": 55.0}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["show-backtest-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Backtest report" in result.stdout
+    assert "Asset: ETH/USDT" in result.stdout
+    assert "Rows: 200" in result.stdout
+    assert "Score: 55.0" in result.stdout
+    assert "CSV path:" not in result.stdout
+    assert "Total trades:" not in result.stdout
+    assert "Classification:" not in result.stdout
+
+
+def test_show_backtest_report_missing_file(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.json"
+
+    result = runner.invoke(app, ["show-backtest-report", "--path", str(missing)])
+
+    assert result.exit_code == 1
+    assert "Backtest report not found" in result.stderr
+
+
+def test_show_backtest_report_invalid_json(tmp_path: Path) -> None:
+    bad_path = tmp_path / "bad.json"
+    bad_path.write_text("{not-json", encoding="utf-8")
+
+    result = runner.invoke(app, ["show-backtest-report", "--path", str(bad_path)])
+
+    assert result.exit_code == 1
+    assert "Invalid backtest report JSON" in result.stderr
+
+
+def test_show_backtest_report_non_object_json(tmp_path: Path) -> None:
+    list_path = tmp_path / "list.json"
+    list_path.write_text(json.dumps([{"csv_path": "data.csv"}]), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-backtest-report", "--path", str(list_path)])
+
+    assert result.exit_code == 1
+    assert "Invalid backtest report JSON" in result.stderr
+
+
+def test_show_backtest_report_default_path_missing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["show-backtest-report"])
+
+    assert result.exit_code == 1
+    assert "Backtest report not found" in result.stderr
