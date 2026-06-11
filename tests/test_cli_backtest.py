@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 from typer.testing import CliRunner
 
-from trading_agent.cli import app, build_strategy_variant, classify_strategy_summary
+from trading_agent.cli import app, build_strategy_variant, classify_strategy_summary, get_classification_reasons
 from trading_agent.config import load_research_policy, load_strategy
 from trading_agent.data import generate_sample_ohlcv
 
@@ -464,3 +464,235 @@ def test_show_comparison_report_rejects_missing_summary(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Comparison report missing summary_by_strategy" in result.stderr
+
+
+# --- get_classification_reasons tests ---
+
+_POLICY = {
+    "comparison_acceptance": {
+        "min_total_trades": 10,
+        "min_windows_with_trades": 2,
+        "min_positive_expectancy_windows": 2,
+        "min_average_expectancy": 0.0,
+        "min_average_profit_factor": 1.1,
+    }
+}
+
+
+def test_get_classification_reasons_insufficient_trades_too_few_trades() -> None:
+    summary = {
+        "total_trades": 5,
+        "windows_with_trades": 3,
+        "positive_expectancy_windows": 2,
+        "average_expectancy": 0.5,
+        "average_profit_factor": 1.5,
+    }
+    reasons = get_classification_reasons(summary, _POLICY, "insufficient_trades")
+    assert "insufficient_total_trades" in reasons
+    assert "insufficient_windows_with_trades" not in reasons
+
+
+def test_get_classification_reasons_insufficient_trades_too_few_windows() -> None:
+    summary = {
+        "total_trades": 15,
+        "windows_with_trades": 1,
+        "positive_expectancy_windows": 2,
+        "average_expectancy": 0.5,
+        "average_profit_factor": 1.5,
+    }
+    reasons = get_classification_reasons(summary, _POLICY, "insufficient_trades")
+    assert "insufficient_windows_with_trades" in reasons
+    assert "insufficient_total_trades" not in reasons
+
+
+def test_get_classification_reasons_insufficient_trades_both_reasons() -> None:
+    summary = {
+        "total_trades": 3,
+        "windows_with_trades": 1,
+        "positive_expectancy_windows": 0,
+        "average_expectancy": 0.0,
+        "average_profit_factor": 0.5,
+    }
+    reasons = get_classification_reasons(summary, _POLICY, "insufficient_trades")
+    assert "insufficient_total_trades" in reasons
+    assert "insufficient_windows_with_trades" in reasons
+
+
+def test_get_classification_reasons_weak_expectancy() -> None:
+    summary = {
+        "total_trades": 10,
+        "windows_with_trades": 2,
+        "positive_expectancy_windows": 2,
+        "average_expectancy": -0.1,
+        "average_profit_factor": 1.5,
+    }
+    reasons = get_classification_reasons(summary, _POLICY, "weak")
+    assert "average_expectancy_below_threshold" in reasons
+    assert "average_profit_factor_below_threshold" not in reasons
+
+
+def test_get_classification_reasons_weak_profit_factor() -> None:
+    summary = {
+        "total_trades": 10,
+        "windows_with_trades": 2,
+        "positive_expectancy_windows": 2,
+        "average_expectancy": 0.5,
+        "average_profit_factor": 0.9,
+    }
+    reasons = get_classification_reasons(summary, _POLICY, "weak")
+    assert "average_profit_factor_below_threshold" in reasons
+    assert "average_expectancy_below_threshold" not in reasons
+
+
+def test_get_classification_reasons_weak_both() -> None:
+    summary = {
+        "total_trades": 10,
+        "windows_with_trades": 2,
+        "positive_expectancy_windows": 2,
+        "average_expectancy": -0.5,
+        "average_profit_factor": 0.8,
+    }
+    reasons = get_classification_reasons(summary, _POLICY, "weak")
+    assert "average_expectancy_below_threshold" in reasons
+    assert "average_profit_factor_below_threshold" in reasons
+
+
+def test_get_classification_reasons_watchlist_contains_diagnostic_reasons() -> None:
+    summary = {
+        "total_trades": 12,
+        "windows_with_trades": 3,
+        "positive_expectancy_windows": 1,
+        "average_expectancy": 0.2,
+        "average_profit_factor": 1.4,
+    }
+    reasons = get_classification_reasons(summary, _POLICY, "watchlist")
+    assert "insufficient_positive_expectancy_windows" in reasons
+    assert "total_trades_above_threshold" in reasons
+    assert "windows_with_trades_above_threshold" in reasons
+
+
+def test_get_classification_reasons_candidate_contains_positive_reasons() -> None:
+    summary = {
+        "total_trades": 20,
+        "windows_with_trades": 4,
+        "positive_expectancy_windows": 3,
+        "average_expectancy": 0.3,
+        "average_profit_factor": 1.5,
+    }
+    reasons = get_classification_reasons(summary, _POLICY, "candidate")
+    assert "total_trades_above_threshold" in reasons
+    assert "windows_with_trades_above_threshold" in reasons
+    assert "positive_expectancy_windows_above_threshold" in reasons
+    assert "average_expectancy_above_threshold" in reasons
+    assert "average_profit_factor_above_threshold" in reasons
+
+
+def test_get_classification_reasons_uses_policy_thresholds() -> None:
+    strict_policy = {
+        "comparison_acceptance": {
+            "min_total_trades": 50,
+            "min_windows_with_trades": 5,
+            "min_positive_expectancy_windows": 3,
+            "min_average_expectancy": 0.0,
+            "min_average_profit_factor": 1.1,
+        }
+    }
+    summary = {
+        "total_trades": 10,
+        "windows_with_trades": 1,
+        "positive_expectancy_windows": 2,
+        "average_expectancy": 0.5,
+        "average_profit_factor": 1.5,
+    }
+    reasons = get_classification_reasons(summary, strict_policy, "insufficient_trades")
+    assert "insufficient_total_trades" in reasons
+    assert "insufficient_windows_with_trades" in reasons
+
+
+def test_show_comparison_report_displays_reasons(tmp_path: Path, monkeypatch) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 100,
+                "windows": 4,
+                "gaps_detected": 0,
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "candidate_strat",
+                        "windows": 4,
+                        "windows_with_trades": 3,
+                        "total_trades": 20,
+                        "positive_expectancy_windows": 3,
+                        "average_expectancy": 0.3,
+                        "average_profit_factor": 1.5,
+                    },
+                    {
+                        "strategy_id": "weak_strat",
+                        "windows": 4,
+                        "windows_with_trades": 2,
+                        "total_trades": 12,
+                        "positive_expectancy_windows": 2,
+                        "average_expectancy": -0.2,
+                        "average_profit_factor": 0.9,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    assert result.exit_code == 0
+    assert "Classification" not in result.stdout or "Research status" in result.stdout
+    assert "Reasons:" in result.stdout
+    assert "average_profit_factor_above_threshold" in result.stdout
+    assert "average_expectancy_below_threshold" in result.stdout
+    assert "best_strategy" not in result.stdout
+
+
+def test_show_comparison_report_backward_compat_no_reasons_field(tmp_path: Path, monkeypatch) -> None:
+    """Old reports without a 'reasons' field in JSON must still display correctly."""
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 80,
+                "windows": 4,
+                "gaps_detected": 0,
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "old_strategy",
+                        "windows": 4,
+                        "windows_with_trades": 1,
+                        "total_trades": 5,
+                        "positive_expectancy_windows": 0,
+                        "average_expectancy": -0.1,
+                        "average_profit_factor": 0.8,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    assert result.exit_code == 0
+    assert "old_strategy" in result.stdout
+    assert "Research status: insufficient_trades" in result.stdout
+    assert "Reasons:" in result.stdout
+    assert "best_strategy" not in result.stdout
