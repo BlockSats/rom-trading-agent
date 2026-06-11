@@ -439,6 +439,27 @@ def load_comparison_report(path: Path) -> dict[str, Any]:
     return payload
 
 
+def load_assets_comparison_report(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        typer.echo("Assets comparison report not found", err=True)
+        raise typer.Exit(code=1)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        typer.echo("Invalid assets comparison report JSON", err=True)
+        raise typer.Exit(code=1)
+    if not isinstance(payload, dict):
+        typer.echo("Invalid assets comparison report JSON", err=True)
+        raise typer.Exit(code=1)
+    if "results_by_asset" not in payload:
+        typer.echo("Assets comparison report missing results_by_asset", err=True)
+        raise typer.Exit(code=1)
+    if not isinstance(payload["results_by_asset"], dict):
+        typer.echo("Assets comparison report missing results_by_asset", err=True)
+        raise typer.Exit(code=1)
+    return payload
+
+
 @app.command("check")
 def check() -> None:
     """Validate configuration and ensure state files exist."""
@@ -1201,6 +1222,56 @@ def show_backtest_report(
         ("score", "Score"),
         ("classification", "Classification"),
     ])
+
+
+@app.command("show-assets-comparison-report")
+def show_assets_comparison_report(
+    path: Path = typer.Option(
+        Path("outputs/strategy_assets_comparison_report.json"),
+        "--path",
+        help="Path to a multi-asset strategy comparison report JSON.",
+    ),
+) -> None:
+    """Read and display a previously generated multi-asset comparison report."""
+    report = load_assets_comparison_report(path)
+
+    typer.echo("Assets comparison report")
+    _display_report_fields(report, [
+        ("command", "Command"),
+        ("windows", "Windows"),
+        ("assets", "Assets"),
+        ("strategies", "Strategies"),
+        ("output_dir", "Output dir"),
+        ("report_path", "Report path"),
+    ])
+
+    typer.echo("")
+    typer.echo("Results by asset")
+
+    for asset, asset_data in report["results_by_asset"].items():
+        typer.echo(f"  {asset}")
+        if "csv_path" in asset_data:
+            typer.echo(f"    CSV path: {asset_data['csv_path']}")
+        if "rows" in asset_data:
+            typer.echo(f"    Rows: {asset_data['rows']}")
+        if "gaps_detected" in asset_data:
+            typer.echo(f"    Gaps detected: {asset_data['gaps_detected']}")
+        if "summary_by_strategy" in asset_data:
+            typer.echo("    Summary by strategy")
+            for s in asset_data["summary_by_strategy"]:
+                strategy_id = s.get("strategy_id", "")
+                typer.echo(f"      {strategy_id}")
+                for key, label in [
+                    ("windows", "Windows"),
+                    ("windows_with_trades", "Windows with trades"),
+                    ("total_trades", "Total trades"),
+                    ("positive_expectancy_windows", "Positive expectancy windows"),
+                    ("average_expectancy", "Average expectancy"),
+                    ("average_profit_factor", "Average profit factor"),
+                ]:
+                    if key in s:
+                        typer.echo(f"        {label}: {s[key]}")
+        typer.echo("")
 
 
 @app.command("research-policy")
