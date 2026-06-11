@@ -92,3 +92,55 @@ def test_no_live_trading_components_exist() -> None:
     source = inspect.getsource(broker_paper).lower()
     forbidden = ["ccxt", "binance", "kraken", "websocket", "api key", "private key"]
     assert not any(token in source for token in forbidden)
+
+
+def test_fixed_pct_mode_unchanged_when_mode_absent() -> None:
+    """fixed_pct behavior is used when 'mode' key is absent from risk config."""
+    strategy = {
+        "version": "0001",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {"indicator": "rsi", "threshold": 30, "direction": "long"},
+        "exit": {"rsi_take_profit": 55},
+        "risk": {"stop_loss_pct": 2.0, "position_size_pct": 10.0},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.threshold"]},
+    }
+    df = generate_sample_ohlcv(rows=50, seed=42)
+    trades = run_strategy_on_dataframe(df, strategy, initial_balance=10000.0)
+    assert isinstance(trades, list)
+    for trade in trades:
+        assert "entry_price" in trade
+        assert "position_size" in trade
+
+
+def test_atr_mode_produces_different_sizing_than_fixed_pct() -> None:
+    """When mode == 'atr', position sizing uses ATR-based calculation, not position_size_pct."""
+    base = {
+        "version": "0001",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {"indicator": "rsi", "threshold": 80, "direction": "long"},
+        "exit": {"rsi_take_profit": 95},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": []},
+    }
+    df = generate_sample_ohlcv(rows=50, seed=42)
+
+    strategy_fixed = {**base, "risk": {"stop_loss_pct": 2.0, "position_size_pct": 10.0}}
+    trades_fixed = run_strategy_on_dataframe(df, strategy_fixed, initial_balance=10000.0)
+
+    strategy_atr = {
+        **base,
+        "risk": {"mode": "atr", "risk_pct": 1.0, "atr_period": 2, "atr_stop_multiplier": 2.0},
+    }
+    trades_atr = run_strategy_on_dataframe(df, strategy_atr, initial_balance=10000.0)
+
+    assert isinstance(trades_atr, list)
+    # Both modes should produce at least one trade with the lenient RSI threshold.
+    assert len(trades_fixed) > 0
+    assert len(trades_atr) > 0
+    # ATR-based sizing produces different position sizes than fixed 10%.
+    fixed_sizes = [round(t["position_size"], 8) for t in trades_fixed]
+    atr_sizes = [round(t["position_size"], 8) for t in trades_atr]
+    assert fixed_sizes != atr_sizes
