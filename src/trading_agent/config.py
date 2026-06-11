@@ -7,7 +7,7 @@ from typing import Any
 import yaml
 
 
-SUPPORTED_STRATEGY_IDS = {"rsi_baseline", "ema_atr_trend"}
+SUPPORTED_STRATEGY_IDS = {"rsi_baseline", "ema_atr_trend", "donchian_breakout"}
 DEFAULT_STRATEGY_ID = "rsi_baseline"
 
 
@@ -65,6 +65,18 @@ def _validate_ema_atr_trend(entry: dict[str, Any], exit_: dict[str, Any]) -> Non
     _require_positive_number(exit_, "atr_stop_multiplier", "strategy.exit")
 
 
+def _validate_donchian_breakout(entry: dict[str, Any], exit_: dict[str, Any]) -> None:
+    if entry.get("indicator") != "donchian":
+        raise ValueError("strategy.entry.indicator must be 'donchian'")
+    donchian_period = entry.get("donchian_period")
+    if not isinstance(donchian_period, int) or isinstance(donchian_period, bool) or donchian_period < 2:
+        raise ValueError("strategy.entry.donchian_period must be an integer >= 2")
+    if entry.get("direction") != "long":
+        raise ValueError("strategy.entry.direction must be 'long'")
+    _require_positive_int(exit_, "atr_period", "strategy.exit")
+    _require_positive_number(exit_, "atr_stop_multiplier", "strategy.exit")
+
+
 def validate_strategy(strategy: dict[str, Any]) -> dict[str, Any]:
     strategy = _require_mapping(strategy, "strategy")
     required_keys = ["version", "asset", "timeframe", "entry", "exit", "risk", "costs", "reflection"]
@@ -93,6 +105,8 @@ def validate_strategy(strategy: dict[str, Any]) -> dict[str, Any]:
         _validate_rsi_baseline(entry, exit_)
     elif strategy_id == "ema_atr_trend":
         _validate_ema_atr_trend(entry, exit_)
+    elif strategy_id == "donchian_breakout":
+        _validate_donchian_breakout(entry, exit_)
     if "stop_loss_pct" not in risk or not _is_numeric(risk["stop_loss_pct"]) or float(risk["stop_loss_pct"]) <= 0:
         raise ValueError("strategy.risk.stop_loss_pct must be numeric and > 0")
     if "position_size_pct" not in risk or not _is_numeric(risk["position_size_pct"]) or not (

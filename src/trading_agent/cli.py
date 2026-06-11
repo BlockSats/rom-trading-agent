@@ -79,6 +79,24 @@ def build_strategy_variant(base_strategy: dict[str, Any], strategy_id: str) -> d
             "atr_period": 14,
             "atr_stop_multiplier": 2.0,
         }
+    elif strategy_id == "donchian_breakout":
+        strategy["entry"] = {
+            "indicator": "donchian",
+            "donchian_period": 20,
+            "direction": "long",
+        }
+        strategy["exit"] = {
+            "atr_period": 14,
+            "atr_stop_multiplier": 2.0,
+        }
+        # ATR risk mode: atr_period and atr_stop_multiplier match exit values exactly.
+        strategy["risk"] = {
+            **strategy["risk"],
+            "mode": "atr",
+            "risk_pct": 0.5,
+            "atr_period": 14,
+            "atr_stop_multiplier": 2.0,
+        }
     elif strategy_id != "rsi_baseline":
         raise ValueError(f"unsupported strategy_id: {strategy_id}")
 
@@ -683,7 +701,7 @@ def compare_strategies_csv(path: Path) -> None:
     gaps = detect_time_gaps(ohlcv)
 
     strategies = []
-    for strategy_id in ["rsi_baseline", "ema_atr_trend"]:
+    for strategy_id in ["rsi_baseline", "ema_atr_trend", "donchian_breakout"]:
         strategy = build_strategy_variant(base_strategy, strategy_id)
         strategies.append(summarize_strategy_on_dataframe(ohlcv, strategy, goal))
 
@@ -745,6 +763,7 @@ def compare_strategies_windows_csv(
     strategy_variants = [
         build_strategy_variant(base_strategy, "rsi_baseline"),
         build_strategy_variant(base_strategy, "ema_atr_trend"),
+        build_strategy_variant(base_strategy, "donchian_breakout"),
     ]
 
     results = []

@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 from typer.testing import CliRunner
 
-from trading_agent.cli import app, classify_strategy_summary
-from trading_agent.config import load_research_policy
+from trading_agent.cli import app, build_strategy_variant, classify_strategy_summary
+from trading_agent.config import load_research_policy, load_strategy
 from trading_agent.data import generate_sample_ohlcv
 
 
@@ -149,15 +149,18 @@ def test_compare_strategies_csv_creates_report_and_leaves_state_untouched(tmp_pa
     assert payload["rows"] == 50
     assert payload["gaps_detected"] == 0
     assert payload["report_path"] == "outputs/strategy_comparison_report.json"
+    # Intentional: v0.31 adds donchian_breakout as Candidate 003
     assert {strategy["strategy_id"] for strategy in payload["strategies"]} == {
         "rsi_baseline",
         "ema_atr_trend",
+        "donchian_breakout",
     }
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert {strategy["strategy_id"] for strategy in report["strategies"]} == {
         "rsi_baseline",
         "ema_atr_trend",
+        "donchian_breakout",
     }
 
 
@@ -189,15 +192,18 @@ def test_compare_strategies_windows_csv_creates_report_and_leaves_state_untouche
     assert len(payload["results"]) == 4
     assert sum(window["rows"] for window in payload["results"]) == 80
     assert "best_strategy" not in payload
+    # Intentional: v0.31 adds donchian_breakout as Candidate 003
     assert {summary["strategy_id"] for summary in payload["summary_by_strategy"]} == {
         "rsi_baseline",
         "ema_atr_trend",
+        "donchian_breakout",
     }
 
     for window in payload["results"]:
         assert {strategy["strategy_id"] for strategy in window["strategies"]} == {
             "rsi_baseline",
             "ema_atr_trend",
+            "donchian_breakout",
         }
 
     for summary in payload["summary_by_strategy"]:
@@ -214,6 +220,7 @@ def test_compare_strategies_windows_csv_creates_report_and_leaves_state_untouche
     assert {summary["strategy_id"] for summary in report["summary_by_strategy"]} == {
         "rsi_baseline",
         "ema_atr_trend",
+        "donchian_breakout",
     }
 
 
@@ -248,6 +255,17 @@ def test_compare_strategies_windows_csv_rejects_more_windows_than_rows(tmp_path:
     assert payload["reason"] == "windows_must_not_exceed_rows"
     assert payload["windows"] == 51
     assert payload["rows"] == 50
+
+
+def test_donchian_breakout_variant_atr_fields_match_exit(tmp_path: Path, monkeypatch) -> None:
+    """The donchian_breakout variant built by cli.py must use the same atr_period and
+    atr_stop_multiplier for risk sizing and for the exit trailing stop."""
+    _write_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    base = load_strategy()
+    variant = build_strategy_variant(base, "donchian_breakout")
+    assert variant["exit"]["atr_period"] == variant["risk"]["atr_period"]
+    assert variant["exit"]["atr_stop_multiplier"] == variant["risk"]["atr_stop_multiplier"]
 
 
 def test_classify_strategy_summary_returns_research_status() -> None:

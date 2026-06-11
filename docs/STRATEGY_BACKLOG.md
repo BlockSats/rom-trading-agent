@@ -31,7 +31,7 @@ Statuses:
 
 ## Candidate 003 - Donchian Breakout
 
-- Status: planned
+- Status: testing
 - Idea: Test breakout entries when price clears a recent high or low range.
 - Data needed: Clean OHLCV with sustained trend and range periods.
 - Timeframes: 1h, 4h, daily validation.
