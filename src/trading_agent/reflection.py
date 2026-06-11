@@ -11,6 +11,10 @@ SAFE_BOUNDS = {
     "risk.position_size_pct": (1, 25),
 }
 
+# Only rsi_baseline has bounded reflection variables defined.
+# Other strategy_ids must be added explicitly before reflection can be used.
+REFLECTION_SUPPORTED_STRATEGY_IDS = {"rsi_baseline"}
+
 
 def _get_nested(data: dict[str, Any], path: str) -> Any:
     current: Any = data
@@ -51,6 +55,10 @@ def _adjust_value(variable: str, old_value: float, score_result: dict[str, Any])
 
 
 def propose_one_change(strategy: dict[str, Any], score_result: dict[str, Any]) -> dict[str, Any]:
+    strategy_id = strategy.get("strategy_id", "rsi_baseline")
+    if strategy_id not in REFLECTION_SUPPORTED_STRATEGY_IDS:
+        raise ValueError(f"reflection not supported for strategy: {strategy_id}")
+
     allowed = list(strategy.get("reflection", {}).get("allowed_variables", []))
     if not allowed:
         raise ValueError("no allowed variables configured")
@@ -76,6 +84,10 @@ def propose_one_change(strategy: dict[str, Any], score_result: dict[str, Any]) -
 
 
 def apply_reflection_proposal(strategy: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any]:
+    strategy_id = strategy.get("strategy_id", "rsi_baseline")
+    if strategy_id not in REFLECTION_SUPPORTED_STRATEGY_IDS:
+        raise ValueError(f"reflection not supported for strategy: {strategy_id}")
+
     strategy_copy = copy.deepcopy(strategy)
     reflection = strategy_copy.get("reflection", {})
     allowed = list(reflection.get("allowed_variables", []))
