@@ -808,6 +808,22 @@ def show_comparison_report(
         typer.echo("")
 
 
+@app.command("research-policy")
+def research_policy() -> None:
+    """Display the current research policy configuration."""
+    policy = load_research_policy()
+    thresholds = policy["comparison_acceptance"]
+
+    typer.echo("Research policy")
+    typer.echo("")
+    typer.echo("Comparison acceptance")
+    typer.echo(f"  Min total trades: {thresholds['min_total_trades']}")
+    typer.echo(f"  Min windows with trades: {thresholds['min_windows_with_trades']}")
+    typer.echo(f"  Min positive expectancy windows: {thresholds['min_positive_expectancy_windows']}")
+    typer.echo(f"  Min average expectancy: {thresholds['min_average_expectancy']}")
+    typer.echo(f"  Min average profit factor: {thresholds['min_average_profit_factor']}")
+
+
 @app.command("reflect")
 def reflect() -> None:
     """Propose and apply one strategy improvement from trade scoring."""

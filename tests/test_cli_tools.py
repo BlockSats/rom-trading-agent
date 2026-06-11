@@ -126,3 +126,41 @@ def test_config_command_invalid_section() -> None:
 
     assert result.exit_code == 1
     assert "Invalid section" in result.stderr
+
+
+def test_research_policy_command_readable() -> None:
+    result = runner.invoke(app, ["research-policy"])
+
+    assert result.exit_code == 0
+    assert "Research policy" in result.stdout
+    assert "Comparison acceptance" in result.stdout
+    assert "Min total trades:" in result.stdout
+    assert "Min windows with trades:" in result.stdout
+    assert "Min positive expectancy windows:" in result.stdout
+    assert "Min average expectancy:" in result.stdout
+    assert "Min average profit factor:" in result.stdout
+
+
+def test_research_policy_command_shows_configured_values(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "research_policy.yaml").write_text(
+        """
+comparison_acceptance:
+  min_total_trades: 20
+  min_windows_with_trades: 3
+  min_positive_expectancy_windows: 3
+  min_average_expectancy: 0.5
+  min_average_profit_factor: 1.3
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["research-policy"])
+
+    assert result.exit_code == 0
+    assert "Min total trades: 20" in result.stdout
+    assert "Min windows with trades: 3" in result.stdout
+    assert "Min positive expectancy windows: 3" in result.stdout
+    assert "Min average expectancy: 0.5" in result.stdout
+    assert "Min average profit factor: 1.3" in result.stdout
