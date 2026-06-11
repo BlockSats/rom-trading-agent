@@ -210,6 +210,27 @@ def classify_strategy_summary(summary: dict[str, Any], research_policy: dict[str
     return "candidate"
 
 
+def _load_report_json(path: Path, not_found_msg: str, invalid_msg: str) -> dict[str, Any]:
+    if not path.exists():
+        typer.echo(not_found_msg, err=True)
+        raise typer.Exit(code=1)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        typer.echo(invalid_msg, err=True)
+        raise typer.Exit(code=1)
+    if not isinstance(payload, dict):
+        typer.echo(invalid_msg, err=True)
+        raise typer.Exit(code=1)
+    return payload
+
+
+def _display_report_fields(payload: dict[str, Any], fields: list[tuple[str, str]]) -> None:
+    for key, label in fields:
+        if key in payload:
+            typer.echo(f"  {label}: {payload[key]}")
+
+
 def load_comparison_report(path: Path) -> dict[str, Any]:
     if not path.exists():
         typer.echo("Comparison report not found", err=True)
@@ -817,59 +838,29 @@ def show_research_report(
     ),
 ) -> None:
     """Read and display a previously generated research cycle report."""
-    if not path.exists():
-        typer.echo("Research report not found", err=True)
-        raise typer.Exit(code=1)
-
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        typer.echo("Invalid research report JSON", err=True)
-        raise typer.Exit(code=1)
-
-    if not isinstance(payload, dict):
-        typer.echo("Invalid research report JSON", err=True)
-        raise typer.Exit(code=1)
-
+    payload = _load_report_json(path, "Research report not found", "Invalid research report JSON")
     typer.echo("Research cycle report")
-    if "command" in payload:
-        typer.echo(f"  Command: {payload['command']}")
-    if "status" in payload:
-        typer.echo(f"  Status: {payload['status']}")
-    if "symbol" in payload:
-        typer.echo(f"  Symbol: {payload['symbol']}")
-    if "interval" in payload:
-        typer.echo(f"  Interval: {payload['interval']}")
-    if "limit" in payload:
-        typer.echo(f"  Limit: {payload['limit']}")
-    if "csv_path" in payload:
-        typer.echo(f"  CSV path: {payload['csv_path']}")
-    if "rows" in payload:
-        typer.echo(f"  Rows: {payload['rows']}")
-    if "gaps_detected" in payload:
-        typer.echo(f"  Gaps detected: {payload['gaps_detected']}")
-    if "asset" in payload:
-        typer.echo(f"  Asset: {payload['asset']}")
-    if "timeframe" in payload:
-        typer.echo(f"  Timeframe: {payload['timeframe']}")
-    if "initial_balance" in payload:
-        typer.echo(f"  Initial balance: {payload['initial_balance']}")
-    if "total_trades" in payload:
-        typer.echo(f"  Total trades: {payload['total_trades']}")
-    if "final_balance" in payload:
-        typer.echo(f"  Final balance: {payload['final_balance']}")
-    if "net_pnl" in payload:
-        typer.echo(f"  Net PnL: {payload['net_pnl']}")
-    if "winrate" in payload:
-        typer.echo(f"  Winrate: {payload['winrate']}")
-    if "profit_factor" in payload:
-        typer.echo(f"  Profit factor: {payload['profit_factor']}")
-    if "expectancy" in payload:
-        typer.echo(f"  Expectancy: {payload['expectancy']}")
-    if "score" in payload:
-        typer.echo(f"  Score: {payload['score']}")
-    if "classification" in payload:
-        typer.echo(f"  Classification: {payload['classification']}")
+    _display_report_fields(payload, [
+        ("command", "Command"),
+        ("status", "Status"),
+        ("symbol", "Symbol"),
+        ("interval", "Interval"),
+        ("limit", "Limit"),
+        ("csv_path", "CSV path"),
+        ("rows", "Rows"),
+        ("gaps_detected", "Gaps detected"),
+        ("asset", "Asset"),
+        ("timeframe", "Timeframe"),
+        ("initial_balance", "Initial balance"),
+        ("total_trades", "Total trades"),
+        ("final_balance", "Final balance"),
+        ("net_pnl", "Net PnL"),
+        ("winrate", "Winrate"),
+        ("profit_factor", "Profit factor"),
+        ("expectancy", "Expectancy"),
+        ("score", "Score"),
+        ("classification", "Classification"),
+    ])
 
 
 @app.command("show-backtest-report")
@@ -881,49 +872,24 @@ def show_backtest_report(
     ),
 ) -> None:
     """Read and display a previously generated backtest report."""
-    if not path.exists():
-        typer.echo("Backtest report not found", err=True)
-        raise typer.Exit(code=1)
-
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        typer.echo("Invalid backtest report JSON", err=True)
-        raise typer.Exit(code=1)
-
-    if not isinstance(payload, dict):
-        typer.echo("Invalid backtest report JSON", err=True)
-        raise typer.Exit(code=1)
-
+    payload = _load_report_json(path, "Backtest report not found", "Invalid backtest report JSON")
     typer.echo("Backtest report")
-    if "csv_path" in payload:
-        typer.echo(f"  CSV path: {payload['csv_path']}")
-    if "asset" in payload:
-        typer.echo(f"  Asset: {payload['asset']}")
-    if "timeframe" in payload:
-        typer.echo(f"  Timeframe: {payload['timeframe']}")
-    if "rows" in payload:
-        typer.echo(f"  Rows: {payload['rows']}")
-    if "gaps_detected" in payload:
-        typer.echo(f"  Gaps detected: {payload['gaps_detected']}")
-    if "initial_balance" in payload:
-        typer.echo(f"  Initial balance: {payload['initial_balance']}")
-    if "total_trades" in payload:
-        typer.echo(f"  Total trades: {payload['total_trades']}")
-    if "final_balance" in payload:
-        typer.echo(f"  Final balance: {payload['final_balance']}")
-    if "net_pnl" in payload:
-        typer.echo(f"  Net PnL: {payload['net_pnl']}")
-    if "winrate" in payload:
-        typer.echo(f"  Winrate: {payload['winrate']}")
-    if "profit_factor" in payload:
-        typer.echo(f"  Profit factor: {payload['profit_factor']}")
-    if "expectancy" in payload:
-        typer.echo(f"  Expectancy: {payload['expectancy']}")
-    if "score" in payload:
-        typer.echo(f"  Score: {payload['score']}")
-    if "classification" in payload:
-        typer.echo(f"  Classification: {payload['classification']}")
+    _display_report_fields(payload, [
+        ("csv_path", "CSV path"),
+        ("asset", "Asset"),
+        ("timeframe", "Timeframe"),
+        ("rows", "Rows"),
+        ("gaps_detected", "Gaps detected"),
+        ("initial_balance", "Initial balance"),
+        ("total_trades", "Total trades"),
+        ("final_balance", "Final balance"),
+        ("net_pnl", "Net PnL"),
+        ("winrate", "Winrate"),
+        ("profit_factor", "Profit factor"),
+        ("expectancy", "Expectancy"),
+        ("score", "Score"),
+        ("classification", "Classification"),
+    ])
 
 
 @app.command("research-policy")
