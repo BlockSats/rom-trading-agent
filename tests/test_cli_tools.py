@@ -164,3 +164,111 @@ comparison_acceptance:
     assert "Min positive expectancy windows: 3" in result.stdout
     assert "Min average expectancy: 0.5" in result.stdout
     assert "Min average profit factor: 1.3" in result.stdout
+
+
+def test_show_research_report_displays_full_report(tmp_path: Path) -> None:
+    report_path = tmp_path / "research_cycle_report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "research-cycle",
+                "status": "completed",
+                "symbol": "BTCUSDT",
+                "interval": "1h",
+                "limit": 500,
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 500,
+                "gaps_detected": 0,
+                "asset": "BTC/USDT",
+                "timeframe": "1h",
+                "initial_balance": 10000.0,
+                "total_trades": 12,
+                "final_balance": 10250.0,
+                "net_pnl": 250.0,
+                "winrate": 0.58,
+                "profit_factor": 1.4,
+                "expectancy": 20.8,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["show-research-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Research cycle report" in result.stdout
+    assert "Command: research-cycle" in result.stdout
+    assert "Status: completed" in result.stdout
+    assert "Symbol: BTCUSDT" in result.stdout
+    assert "Interval: 1h" in result.stdout
+    assert "Limit: 500" in result.stdout
+    assert "CSV path: data/BTCUSDT_1h.csv" in result.stdout
+    assert "Rows: 500" in result.stdout
+    assert "Gaps detected: 0" in result.stdout
+    assert "Asset: BTC/USDT" in result.stdout
+    assert "Timeframe: 1h" in result.stdout
+    assert "Initial balance: 10000.0" in result.stdout
+    assert "Total trades: 12" in result.stdout
+    assert "Final balance: 10250.0" in result.stdout
+    assert "Net PnL: 250.0" in result.stdout
+    assert "Winrate: 0.58" in result.stdout
+    assert "Profit factor: 1.4" in result.stdout
+    assert "Expectancy: 20.8" in result.stdout
+
+
+def test_show_research_report_displays_score_and_classification(tmp_path: Path) -> None:
+    report_path = tmp_path / "report.json"
+    report_path.write_text(
+        json.dumps({"status": "completed", "score": 87.5, "classification": "candidate"}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["show-research-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Score: 87.5" in result.stdout
+    assert "Classification: candidate" in result.stdout
+
+
+def test_show_research_report_partial_fields(tmp_path: Path) -> None:
+    report_path = tmp_path / "partial.json"
+    report_path.write_text(
+        json.dumps({"symbol": "ETHUSDT", "rows": 200}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["show-research-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Symbol: ETHUSDT" in result.stdout
+    assert "Rows: 200" in result.stdout
+    assert "Command:" not in result.stdout
+    assert "Status:" not in result.stdout
+
+
+def test_show_research_report_missing_file(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.json"
+
+    result = runner.invoke(app, ["show-research-report", "--path", str(missing)])
+
+    assert result.exit_code == 1
+    assert "Research report not found" in result.stderr
+
+
+def test_show_research_report_invalid_json(tmp_path: Path) -> None:
+    bad_path = tmp_path / "bad.json"
+    bad_path.write_text("{not-json", encoding="utf-8")
+
+    result = runner.invoke(app, ["show-research-report", "--path", str(bad_path)])
+
+    assert result.exit_code == 1
+    assert "Invalid research report JSON" in result.stderr
+
+
+def test_show_research_report_default_path_missing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["show-research-report"])
+
+    assert result.exit_code == 1
+    assert "Research report not found" in result.stderr
