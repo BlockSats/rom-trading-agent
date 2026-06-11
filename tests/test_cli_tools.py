@@ -373,3 +373,241 @@ def test_show_backtest_report_default_path_missing(tmp_path: Path, monkeypatch) 
 
     assert result.exit_code == 1
     assert "Backtest report not found" in result.stderr
+
+
+# --- show-assets-comparison-report ---
+
+_ASSETS_REPORT = {
+    "command": "compare-strategies-assets-csv",
+    "windows": 4,
+    "assets": ["BTCUSDT", "ETHUSDT"],
+    "strategies": ["rsi_baseline", "ema_atr_trend"],
+    "output_dir": "outputs",
+    "report_path": "outputs/strategy_assets_comparison_report.json",
+    "results_by_asset": {
+        "BTCUSDT": {
+            "csv_path": "data/BTCUSDT_1h.csv",
+            "rows": 80,
+            "gaps_detected": 0,
+            "summary_by_strategy": [
+                {
+                    "strategy_id": "rsi_baseline",
+                    "windows": 4,
+                    "windows_with_trades": 3,
+                    "total_trades": 12,
+                    "positive_expectancy_windows": 2,
+                    "average_expectancy": 75.0,
+                    "average_profit_factor": 1.4,
+                },
+                {
+                    "strategy_id": "ema_atr_trend",
+                    "windows": 4,
+                    "windows_with_trades": 2,
+                    "total_trades": 8,
+                    "positive_expectancy_windows": 1,
+                    "average_expectancy": 30.0,
+                    "average_profit_factor": 1.2,
+                },
+            ],
+        },
+        "ETHUSDT": {
+            "csv_path": "data/ETHUSDT_1h.csv",
+            "rows": 60,
+            "gaps_detected": 1,
+            "summary_by_strategy": [
+                {
+                    "strategy_id": "rsi_baseline",
+                    "windows": 4,
+                    "windows_with_trades": 4,
+                    "total_trades": 16,
+                    "positive_expectancy_windows": 3,
+                    "average_expectancy": 90.0,
+                    "average_profit_factor": 1.6,
+                },
+            ],
+        },
+    },
+}
+
+
+def test_show_assets_comparison_report_full(tmp_path: Path) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Assets comparison report" in result.stdout
+    assert "Command: compare-strategies-assets-csv" in result.stdout
+    assert "Windows: 4" in result.stdout
+    assert "Output dir: outputs" in result.stdout
+    assert "Report path: outputs/strategy_assets_comparison_report.json" in result.stdout
+    assert "Results by asset" in result.stdout
+    assert "BTCUSDT" in result.stdout
+    assert "CSV path: data/BTCUSDT_1h.csv" in result.stdout
+    assert "Rows: 80" in result.stdout
+    assert "Gaps detected: 0" in result.stdout
+    assert "Summary by strategy" in result.stdout
+    assert "rsi_baseline" in result.stdout
+    assert "Total trades: 12" in result.stdout
+    assert "ETHUSDT" in result.stdout
+    assert "Rows: 60" in result.stdout
+    assert "Gaps detected: 1" in result.stdout
+
+
+def test_show_assets_comparison_report_custom_path(tmp_path: Path) -> None:
+    report_path = tmp_path / "custom_assets.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Assets comparison report" in result.stdout
+
+
+def test_show_assets_comparison_report_missing_file(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.json"
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(missing)])
+
+    assert result.exit_code == 1
+    assert "Assets comparison report not found" in result.stderr
+
+
+def test_show_assets_comparison_report_invalid_json(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text("not valid json {{{", encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(bad)])
+
+    assert result.exit_code == 1
+    assert "Invalid assets comparison report JSON" in result.stderr
+
+
+def test_show_assets_comparison_report_json_not_dict(tmp_path: Path) -> None:
+    list_path = tmp_path / "list.json"
+    list_path.write_text(json.dumps([{"csv_path": "data.csv"}]), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(list_path)])
+
+    assert result.exit_code == 1
+    assert "Invalid assets comparison report JSON" in result.stderr
+
+
+def test_show_assets_comparison_report_missing_results_by_asset(tmp_path: Path) -> None:
+    report_path = tmp_path / "no_results.json"
+    report_path.write_text(json.dumps({"command": "compare-strategies-assets-csv"}), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 1
+    assert "missing results_by_asset" in result.stderr
+
+
+def test_show_assets_comparison_report_results_by_asset_not_dict(tmp_path: Path) -> None:
+    report_path = tmp_path / "bad_results.json"
+    report_path.write_text(
+        json.dumps({"command": "compare-strategies-assets-csv", "results_by_asset": ["BTCUSDT"]}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 1
+    assert "missing results_by_asset" in result.stderr
+
+
+def test_show_assets_comparison_report_asset_order(tmp_path: Path) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    btc_pos = result.stdout.index("BTCUSDT")
+    eth_pos = result.stdout.index("ETHUSDT")
+    assert btc_pos < eth_pos
+
+
+def test_show_assets_comparison_report_strategy_order(tmp_path: Path) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    rsi_pos = result.stdout.index("rsi_baseline")
+    ema_pos = result.stdout.index("ema_atr_trend")
+    assert rsi_pos < ema_pos
+
+
+def test_show_assets_comparison_report_no_forbidden_keys(tmp_path: Path) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    for forbidden in ["best_strategy", "best_asset", "winner", "rank", "ranking", "global_score", "selected_strategy"]:
+        assert forbidden not in result.stdout
+
+
+def test_show_assets_comparison_report_does_not_modify_trades(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    trades_file = state_dir / "trades.jsonl"
+    trades_file.write_text('{"trade": 1}\n', encoding="utf-8")
+    original = trades_file.read_text(encoding="utf-8")
+
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+    runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert trades_file.read_text(encoding="utf-8") == original
+
+
+def test_show_assets_comparison_report_does_not_modify_hypotheses(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    hyp_file = state_dir / "hypotheses.jsonl"
+    hyp_file.write_text('{"hypothesis": 1}\n', encoding="utf-8")
+    original = hyp_file.read_text(encoding="utf-8")
+
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+    runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert hyp_file.read_text(encoding="utf-8") == original
+
+
+def test_show_assets_comparison_report_no_summary_by_strategy(tmp_path: Path) -> None:
+    report = {
+        "command": "compare-strategies-assets-csv",
+        "windows": 2,
+        "results_by_asset": {
+            "BTCUSDT": {
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 40,
+                "gaps_detected": 0,
+            }
+        },
+    }
+    report_path = tmp_path / "no_summary.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "BTCUSDT" in result.stdout
+    assert "Summary by strategy" not in result.stdout
+
+
+def test_show_assets_comparison_report_default_path_missing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["show-assets-comparison-report"])
+
+    assert result.exit_code == 1
+    assert "Assets comparison report not found" in result.stderr
