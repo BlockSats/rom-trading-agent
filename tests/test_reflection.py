@@ -80,6 +80,34 @@ def test_apply_reflection_proposal_rejects_unsupported_strategy_id() -> None:
         apply_reflection_proposal(_ema_atr_strategy(), {"variable": "risk.stop_loss_pct", "new_value": 1.5})
 
 
+def _donchian_strategy() -> dict:
+    return {
+        "version": "0001",
+        "strategy_id": "donchian_breakout",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {
+            "indicator": "donchian",
+            "donchian_period": 20,
+            "direction": "long",
+        },
+        "exit": {"atr_period": 14, "atr_stop_multiplier": 2.0},
+        "risk": {"stop_loss_pct": 2.0, "position_size_pct": 10.0},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.donchian_period"]},
+    }
+
+
+def test_propose_one_change_rejects_donchian_breakout() -> None:
+    with pytest.raises(ValueError, match="reflection not supported for strategy: donchian_breakout"):
+        propose_one_change(_donchian_strategy(), {"score": -0.5})
+
+
+def test_apply_reflection_proposal_rejects_donchian_breakout() -> None:
+    with pytest.raises(ValueError, match="reflection not supported for strategy: donchian_breakout"):
+        apply_reflection_proposal(_donchian_strategy(), {"variable": "entry.donchian_period", "new_value": 15})
+
+
 def test_propose_one_change_without_strategy_id_defaults_to_rsi_baseline() -> None:
     strategy = _strategy()
     del strategy["strategy_id"]

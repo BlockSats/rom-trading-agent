@@ -114,6 +114,68 @@ def test_fixed_pct_mode_unchanged_when_mode_absent() -> None:
         assert "position_size" in trade
 
 
+def test_donchian_breakout_can_run_through_strategy() -> None:
+    strategy = {
+        "version": "0001",
+        "strategy_id": "donchian_breakout",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {
+            "indicator": "donchian",
+            "donchian_period": 5,
+            "direction": "long",
+        },
+        "exit": {"atr_period": 3, "atr_stop_multiplier": 1.5},
+        "risk": {
+            "stop_loss_pct": 2.0,
+            "position_size_pct": 10.0,
+            "mode": "atr",
+            "risk_pct": 1.0,
+            "atr_period": 3,
+            "atr_stop_multiplier": 1.5,
+        },
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.donchian_period"]},
+    }
+    df = generate_sample_ohlcv(rows=50, seed=42)
+
+    trades = run_strategy_on_dataframe(df, strategy)
+
+    assert isinstance(trades, list)
+
+
+def test_donchian_breakout_short_history_returns_no_trades() -> None:
+    strategy = {
+        "version": "0001",
+        "strategy_id": "donchian_breakout",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {
+            "indicator": "donchian",
+            "donchian_period": 20,
+            "direction": "long",
+        },
+        "exit": {"atr_period": 14, "atr_stop_multiplier": 2.0},
+        "risk": {"stop_loss_pct": 2.0, "position_size_pct": 10.0},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.donchian_period"]},
+    }
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2024-01-01", periods=3, freq="h"),
+            "open": [10.0, 11.0, 12.0],
+            "high": [11.0, 12.0, 13.0],
+            "low": [9.0, 10.0, 11.0],
+            "close": [10.0, 11.0, 12.0],
+            "volume": [1.0, 1.0, 1.0],
+        }
+    )
+
+    trades = run_strategy_on_dataframe(df, strategy)
+
+    assert trades == []
+
+
 def test_atr_mode_produces_different_sizing_than_fixed_pct() -> None:
     """When mode == 'atr', position sizing uses ATR-based calculation, not position_size_pct."""
     base = {

@@ -99,8 +99,66 @@ def generate_ema_atr_trend_signals(df: pd.DataFrame, strategy: dict[str, Any]) -
     return signals
 
 
+def generate_donchian_breakout_signals(df: pd.DataFrame, strategy: dict[str, Any]) -> pd.Series:
+    signals = pd.Series("hold", index=df.index, dtype="object")
+    required_columns = {"high", "low", "close"}
+    missing_columns = sorted(required_columns - set(df.columns))
+    if missing_columns:
+        raise ValueError(f"dataframe must contain columns: {', '.join(missing_columns)}")
+
+    donchian_period = int(strategy["entry"]["donchian_period"])
+    atr_period = int(strategy["exit"]["atr_period"])
+    atr_stop_multiplier = float(strategy["exit"]["atr_stop_multiplier"])
+
+    # Guard: atr() raises if fewer than atr_period + 1 rows; also need donchian_period + 1 for shift.
+    minimum_required_rows = max(donchian_period + 1, atr_period + 1)
+    if len(df) < minimum_required_rows:
+        return signals
+
+    closes = df["close"].astype(float)
+    highs = df["high"].astype(float)
+
+    # shift(1) prevents the current candle's high from contributing to its own breakout level.
+    breakout_level = highs.rolling(donchian_period).max().shift(1)
+
+    atr_values = atr(
+        highs.tolist(),
+        df["low"].astype(float).tolist(),
+        closes.tolist(),
+        atr_period,
+    )
+
+    in_position = False
+    highest_close = 0.0
+
+    for position in range(len(df)):
+        close_price = float(closes.iloc[position])
+        level = breakout_level.iloc[position]
+        latest_atr = atr_values.iloc[position]
+
+        if pd.isna(level) or pd.isna(latest_atr):
+            continue
+
+        if not in_position:
+            if close_price > float(level):
+                signals.iloc[position] = "buy"
+                in_position = True
+                highest_close = close_price
+        else:
+            highest_close = max(highest_close, close_price)
+            atr_stop = highest_close - float(latest_atr) * atr_stop_multiplier
+            if close_price <= atr_stop:
+                signals.iloc[position] = "sell"
+                in_position = False
+                highest_close = 0.0
+
+    return signals
+
+
 def generate_signals(df: pd.DataFrame, strategy: dict[str, Any]) -> pd.Series:
     strategy_id = get_active_strategy_id(strategy)
     if strategy_id == "ema_atr_trend":
         return generate_ema_atr_trend_signals(df, strategy)
+    if strategy_id == "donchian_breakout":
+        return generate_donchian_breakout_signals(df, strategy)
     return generate_rsi_signals(df, strategy)

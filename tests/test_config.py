@@ -173,6 +173,64 @@ def test_invalid_costs_raise_errors() -> None:
         validate_strategy(valid)
 
 
+def _donchian_strategy() -> dict:
+    return {
+        "version": "0001",
+        "strategy_id": "donchian_breakout",
+        "asset": "BTC/USDT",
+        "timeframe": "1h",
+        "entry": {
+            "indicator": "donchian",
+            "donchian_period": 20,
+            "direction": "long",
+        },
+        "exit": {"atr_period": 14, "atr_stop_multiplier": 2.0},
+        "risk": {"stop_loss_pct": 2.0, "position_size_pct": 10.0},
+        "costs": {"fee_pct": 0.1, "slippage_pct": 0.05},
+        "reflection": {"one_variable_only": True, "allowed_variables": ["entry.donchian_period"]},
+    }
+
+
+def test_validate_strategy_accepts_donchian_breakout() -> None:
+    loaded = validate_strategy(_donchian_strategy())
+    assert get_active_strategy_id(loaded) == "donchian_breakout"
+
+
+def test_validate_strategy_rejects_donchian_period_below_2() -> None:
+    strategy = _donchian_strategy()
+    strategy["entry"]["donchian_period"] = 1
+    with pytest.raises(ValueError, match="donchian_period"):
+        validate_strategy(strategy)
+
+
+def test_validate_strategy_rejects_donchian_period_zero() -> None:
+    strategy = _donchian_strategy()
+    strategy["entry"]["donchian_period"] = 0
+    with pytest.raises(ValueError, match="donchian_period"):
+        validate_strategy(strategy)
+
+
+def test_validate_strategy_rejects_donchian_invalid_atr_period() -> None:
+    strategy = _donchian_strategy()
+    strategy["exit"]["atr_period"] = 0
+    with pytest.raises(ValueError, match="atr_period"):
+        validate_strategy(strategy)
+
+
+def test_validate_strategy_rejects_donchian_atr_multiplier_zero() -> None:
+    strategy = _donchian_strategy()
+    strategy["exit"]["atr_stop_multiplier"] = 0
+    with pytest.raises(ValueError, match="atr_stop_multiplier"):
+        validate_strategy(strategy)
+
+
+def test_validate_strategy_rejects_donchian_atr_multiplier_negative() -> None:
+    strategy = _donchian_strategy()
+    strategy["exit"]["atr_stop_multiplier"] = -1.0
+    with pytest.raises(ValueError, match="atr_stop_multiplier"):
+        validate_strategy(strategy)
+
+
 def test_reflection_one_variable_only_must_be_true() -> None:
     valid = {
         "version": "0001",
