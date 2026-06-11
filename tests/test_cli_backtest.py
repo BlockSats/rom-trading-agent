@@ -4,9 +4,16 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from typer.testing import CliRunner
 
-from trading_agent.cli import app, build_strategy_variant, classify_strategy_summary, get_classification_reasons
+from trading_agent.cli import (
+    app,
+    build_strategy_variant,
+    classify_strategy_summary,
+    compute_window_robustness_diagnostics,
+    get_classification_reasons,
+)
 from trading_agent.config import load_research_policy, load_strategy
 from trading_agent.data import generate_sample_ohlcv
 
@@ -695,4 +702,382 @@ def test_show_comparison_report_backward_compat_no_reasons_field(tmp_path: Path,
     assert "old_strategy" in result.stdout
     assert "Research status: insufficient_trades" in result.stdout
     assert "Reasons:" in result.stdout
+    assert "best_strategy" not in result.stdout
+
+
+# --- compute_window_robustness_diagnostics unit tests ---
+
+
+def test_compute_window_robustness_diagnostics_basic() -> None:
+    summary = {
+        "windows": 4,
+        "windows_with_trades": 3,
+        "total_trades": 12,
+        "positive_expectancy_windows": 2,
+    }
+    window_results = [
+        {"expectancy": 0.5, "profit_factor": 1.5},
+        {"expectancy": -0.2, "profit_factor": 0.8},
+        {"expectancy": 0.3, "profit_factor": 1.2},
+        {"expectancy": 0.0, "profit_factor": None},
+    ]
+    d = compute_window_robustness_diagnostics(summary, window_results)
+    assert d["zero_trade_windows"] == 1
+    assert d["negative_expectancy_windows"] == 1
+    assert d["average_trades_per_active_window"] == pytest.approx(4.0)
+    assert d["window_participation_rate"] == pytest.approx(0.75)
+    assert d["positive_expectancy_rate"] == pytest.approx(2 / 3)
+    assert d["expectancy_min"] == pytest.approx(-0.2)
+    assert d["expectancy_max"] == pytest.approx(0.5)
+    assert d["profit_factor_min"] == pytest.approx(0.8)
+    assert d["profit_factor_max"] == pytest.approx(1.5)
+
+
+def test_compute_window_robustness_diagnostics_profit_factor_none_filtered() -> None:
+    summary = {
+        "windows": 3,
+        "windows_with_trades": 2,
+        "total_trades": 6,
+        "positive_expectancy_windows": 1,
+    }
+    window_results = [
+        {"expectancy": 0.5, "profit_factor": None},
+        {"expectancy": 0.2, "profit_factor": 1.3},
+        {"expectancy": 0.0, "profit_factor": None},
+    ]
+    d = compute_window_robustness_diagnostics(summary, window_results)
+    # Only 1.3 survives the None filter
+    assert d["profit_factor_min"] == pytest.approx(1.3)
+    assert d["profit_factor_max"] == pytest.approx(1.3)
+
+
+def test_compute_window_robustness_diagnostics_all_profit_factor_none() -> None:
+    summary = {
+        "windows": 3,
+        "windows_with_trades": 0,
+        "total_trades": 0,
+        "positive_expectancy_windows": 0,
+    }
+    window_results = [
+        {"expectancy": 0.0, "profit_factor": None},
+        {"expectancy": 0.0, "profit_factor": None},
+        {"expectancy": 0.0, "profit_factor": None},
+    ]
+    d = compute_window_robustness_diagnostics(summary, window_results)
+    assert d["profit_factor_min"] is None
+    assert d["profit_factor_max"] is None
+    assert d["negative_expectancy_windows"] == 0
+
+
+def test_compute_window_robustness_diagnostics_zero_windows_with_trades() -> None:
+    summary = {
+        "windows": 4,
+        "windows_with_trades": 0,
+        "total_trades": 0,
+        "positive_expectancy_windows": 0,
+    }
+    d = compute_window_robustness_diagnostics(summary, [])
+    assert d["zero_trade_windows"] == 4
+    assert d["average_trades_per_active_window"] is None
+    assert d["positive_expectancy_rate"] is None
+    assert d["window_participation_rate"] == pytest.approx(0.0)
+
+
+def test_compute_window_robustness_diagnostics_expectancy_zero_is_neutral() -> None:
+    summary = {
+        "windows": 3,
+        "windows_with_trades": 2,
+        "total_trades": 5,
+        "positive_expectancy_windows": 0,
+    }
+    window_results = [
+        {"expectancy": 0.0, "profit_factor": None},
+        {"expectancy": 0.0, "profit_factor": None},
+        {"expectancy": 0.0, "profit_factor": None},
+    ]
+    d = compute_window_robustness_diagnostics(summary, window_results)
+    # expectancy == 0 is neutral: not negative
+    assert d["negative_expectancy_windows"] == 0
+
+
+def test_compute_window_robustness_diagnostics_no_window_results() -> None:
+    summary = {
+        "windows": 4,
+        "windows_with_trades": 2,
+        "total_trades": 8,
+        "positive_expectancy_windows": 1,
+    }
+    d = compute_window_robustness_diagnostics(summary, [])
+    assert d["zero_trade_windows"] == 2
+    assert d["negative_expectancy_windows"] is None
+    assert d["expectancy_min"] is None
+    assert d["expectancy_max"] is None
+    assert d["profit_factor_min"] is None
+    assert d["profit_factor_max"] is None
+    assert d["average_trades_per_active_window"] == pytest.approx(4.0)
+    assert d["window_participation_rate"] == pytest.approx(0.5)
+    assert d["positive_expectancy_rate"] == pytest.approx(0.5)
+
+
+# --- show-comparison-report window diagnostics CLI tests ---
+
+
+def test_show_comparison_report_displays_window_diagnostics(tmp_path: Path, monkeypatch) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 80,
+                "windows": 4,
+                "gaps_detected": 0,
+                "results": [
+                    {"window": 1, "strategies": [{"strategy_id": "rsi_baseline", "closed_trades": 3, "expectancy": 0.5, "profit_factor": 1.4}]},
+                    {"window": 2, "strategies": [{"strategy_id": "rsi_baseline", "closed_trades": 0, "expectancy": 0.0, "profit_factor": None}]},
+                    {"window": 3, "strategies": [{"strategy_id": "rsi_baseline", "closed_trades": 4, "expectancy": -0.2, "profit_factor": 0.9}]},
+                    {"window": 4, "strategies": [{"strategy_id": "rsi_baseline", "closed_trades": 2, "expectancy": 0.3, "profit_factor": 1.1}]},
+                ],
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "rsi_baseline",
+                        "windows": 4,
+                        "windows_with_trades": 3,
+                        "total_trades": 9,
+                        "positive_expectancy_windows": 2,
+                        "average_expectancy": 0.15,
+                        "average_profit_factor": 1.13,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    assert result.exit_code == 0
+    assert "Window robustness diagnostics" in result.stdout
+    assert "Zero trade windows: 1" in result.stdout
+    assert "Window participation rate:" in result.stdout
+    assert "Average trades per active window:" in result.stdout
+    assert "Positive expectancy rate:" in result.stdout
+    assert "Negative expectancy windows: 1" in result.stdout
+    assert "Profit factor min:" in result.stdout
+    assert "Profit factor max:" in result.stdout
+    assert "best_strategy" not in result.stdout
+
+
+def test_show_comparison_report_backward_compat_no_results_key(tmp_path: Path, monkeypatch) -> None:
+    """Old reports without a 'results' key still display partial diagnostics from summary data."""
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 80,
+                "windows": 4,
+                "gaps_detected": 0,
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "old_strategy",
+                        "windows": 4,
+                        "windows_with_trades": 2,
+                        "total_trades": 6,
+                        "positive_expectancy_windows": 1,
+                        "average_expectancy": 0.1,
+                        "average_profit_factor": 1.2,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    assert result.exit_code == 0
+    assert "old_strategy" in result.stdout
+    # zero_trade_windows is computable from summary data even without 'results'
+    assert "Zero trade windows: 2" in result.stdout
+    # per-window stats require 'results' — must be absent for old reports
+    assert "Negative expectancy windows:" not in result.stdout
+
+
+def test_show_comparison_report_no_best_strategy_in_diagnostics(tmp_path: Path, monkeypatch) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 80,
+                "windows": 4,
+                "gaps_detected": 0,
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "s1",
+                        "windows": 4,
+                        "windows_with_trades": 4,
+                        "total_trades": 20,
+                        "positive_expectancy_windows": 4,
+                        "average_expectancy": 0.5,
+                        "average_profit_factor": 1.5,
+                    },
+                    {
+                        "strategy_id": "s2",
+                        "windows": 4,
+                        "windows_with_trades": 4,
+                        "total_trades": 15,
+                        "positive_expectancy_windows": 3,
+                        "average_expectancy": 0.3,
+                        "average_profit_factor": 1.3,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    assert result.exit_code == 0
+    assert "best_strategy" not in result.stdout
+
+
+def test_show_comparison_report_no_automatic_sorting(tmp_path: Path, monkeypatch) -> None:
+    """Output order must match report order, not be sorted by any metric."""
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 80,
+                "windows": 4,
+                "gaps_detected": 0,
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "zeta_strategy",
+                        "windows": 4,
+                        "windows_with_trades": 1,
+                        "total_trades": 3,
+                        "positive_expectancy_windows": 1,
+                        "average_expectancy": 0.1,
+                        "average_profit_factor": 1.1,
+                    },
+                    {
+                        "strategy_id": "alpha_strategy",
+                        "windows": 4,
+                        "windows_with_trades": 4,
+                        "total_trades": 20,
+                        "positive_expectancy_windows": 4,
+                        "average_expectancy": 0.5,
+                        "average_profit_factor": 1.5,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    assert result.exit_code == 0
+    # zeta_strategy appears before alpha_strategy — order preserved from the report
+    assert result.stdout.index("zeta_strategy") < result.stdout.index("alpha_strategy")
+
+
+def test_show_comparison_report_does_not_recalculate_backtest(tmp_path: Path, monkeypatch) -> None:
+    """show-comparison-report must never load a CSV or run a backtest."""
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/nonexistent.csv",
+                "rows": 100,
+                "windows": 4,
+                "gaps_detected": 0,
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "strat_a",
+                        "windows": 4,
+                        "windows_with_trades": 2,
+                        "total_trades": 8,
+                        "positive_expectancy_windows": 2,
+                        "average_expectancy": 0.2,
+                        "average_profit_factor": 1.2,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    # If it tried to load nonexistent.csv it would fail — it must succeed without it
+    assert result.exit_code == 0
+    assert "strat_a" in result.stdout
+
+
+def test_show_comparison_report_many_zero_trade_windows(tmp_path: Path, monkeypatch) -> None:
+    """A strategy with mostly inactive windows shows zero_trade_windows alongside participation rate."""
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "outputs" / "strategy_windows_comparison_report.json"
+    report_path.parent.mkdir()
+    report_path.write_text(
+        json.dumps(
+            {
+                "command": "compare-strategies-windows-csv",
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 80,
+                "windows": 8,
+                "gaps_detected": 0,
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "inactive_strategy",
+                        "windows": 8,
+                        "windows_with_trades": 1,
+                        "total_trades": 15,
+                        "positive_expectancy_windows": 1,
+                        "average_expectancy": 0.5,
+                        "average_profit_factor": 2.0,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-comparison-report"])
+
+    assert result.exit_code == 0
+    assert "inactive_strategy" in result.stdout
+    # 8 - 1 = 7 inactive windows must be visible
+    assert "Zero trade windows: 7" in result.stdout
     assert "best_strategy" not in result.stdout

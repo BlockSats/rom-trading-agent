@@ -282,6 +282,86 @@ def get_classification_reasons(
     return reasons
 
 
+def _get_strategy_window_results(
+    report: dict[str, Any], strategy_id: str
+) -> list[dict[str, Any]]:
+    """Extract per-window results for one strategy from the report results list."""
+    out = []
+    for window in report.get("results", []):
+        for sr in window.get("strategies", []):
+            if str(sr.get("strategy_id")) == strategy_id:
+                out.append(sr)
+                break
+    return out
+
+
+def compute_window_robustness_diagnostics(
+    summary: dict[str, Any],
+    window_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compute informational robustness diagnostics for one strategy.
+
+    Diagnostics are purely informational — they never classify, sort, or select strategies.
+    window_results is the list of per-window strategy results for this strategy.
+    Pass an empty list when per-window data is unavailable (old reports).
+    """
+    windows = int(summary.get("windows", 0))
+    windows_with_trades = int(summary.get("windows_with_trades", 0))
+    total_trades = int(summary.get("total_trades", 0))
+    positive_expectancy_windows = int(summary.get("positive_expectancy_windows", 0))
+
+    zero_trade_windows = windows - windows_with_trades
+
+    window_participation_rate = windows_with_trades / windows if windows > 0 else None
+
+    average_trades_per_active_window = (
+        total_trades / windows_with_trades if windows_with_trades > 0 else None
+    )
+
+    # Denominator is windows_with_trades: a zero-trade window cannot have positive expectancy.
+    positive_expectancy_rate = (
+        positive_expectancy_windows / windows_with_trades if windows_with_trades > 0 else None
+    )
+
+    negative_expectancy_windows = None
+    expectancy_min = None
+    expectancy_max = None
+    profit_factor_min = None
+    profit_factor_max = None
+
+    if window_results:
+        expectancy_values = [float(r.get("expectancy", 0.0)) for r in window_results]
+        profit_factor_values = [
+            float(r["profit_factor"])
+            for r in window_results
+            if r.get("profit_factor") is not None
+        ]
+
+        # expectancy == 0 is neutral: not counted as negative
+        negative_expectancy_windows = sum(1 for e in expectancy_values if e < 0)
+
+        if expectancy_values:
+            expectancy_min = min(expectancy_values)
+            expectancy_max = max(expectancy_values)
+
+        if profit_factor_values:
+            profit_factor_min = min(profit_factor_values)
+            profit_factor_max = max(profit_factor_values)
+        # if all profit_factor are None, profit_factor_min/max remain None
+
+    return {
+        "zero_trade_windows": zero_trade_windows,
+        "negative_expectancy_windows": negative_expectancy_windows,
+        "average_trades_per_active_window": average_trades_per_active_window,
+        "expectancy_min": expectancy_min,
+        "expectancy_max": expectancy_max,
+        "profit_factor_min": profit_factor_min,
+        "profit_factor_max": profit_factor_max,
+        "window_participation_rate": window_participation_rate,
+        "positive_expectancy_rate": positive_expectancy_rate,
+    }
+
+
 def _load_report_json(path: Path, not_found_msg: str, invalid_msg: str) -> dict[str, Any]:
     if not path.exists():
         typer.echo(not_found_msg, err=True)
@@ -893,7 +973,11 @@ def show_comparison_report(
     for strategy_summary in report["summary_by_strategy"]:
         classification = classify_strategy_summary(strategy_summary, research_policy)
         reasons = get_classification_reasons(strategy_summary, research_policy, classification)
-        typer.echo(f"  {strategy_summary.get('strategy_id')}")
+        strategy_id = str(strategy_summary.get("strategy_id", ""))
+        window_results = _get_strategy_window_results(report, strategy_id)
+        diagnostics = compute_window_robustness_diagnostics(strategy_summary, window_results)
+
+        typer.echo(f"  {strategy_id}")
         typer.echo(f"    Research status: {classification}")
         typer.echo("    Reasons:")
         for reason in reasons:
@@ -904,6 +988,21 @@ def show_comparison_report(
         typer.echo(f"    Positive expectancy windows: {strategy_summary.get('positive_expectancy_windows')}")
         typer.echo(f"    Average expectancy: {strategy_summary.get('average_expectancy')}")
         typer.echo(f"    Average profit factor: {strategy_summary.get('average_profit_factor')}")
+        typer.echo("    Window robustness diagnostics")
+        typer.echo(f"      Zero trade windows: {diagnostics['zero_trade_windows']}")
+        typer.echo(f"      Window participation rate: {diagnostics['window_participation_rate']}")
+        typer.echo(f"      Average trades per active window: {diagnostics['average_trades_per_active_window']}")
+        typer.echo(f"      Positive expectancy rate: {diagnostics['positive_expectancy_rate']}")
+        if diagnostics["negative_expectancy_windows"] is not None:
+            typer.echo(f"      Negative expectancy windows: {diagnostics['negative_expectancy_windows']}")
+        if diagnostics["expectancy_min"] is not None:
+            typer.echo(f"      Expectancy min: {diagnostics['expectancy_min']}")
+        if diagnostics["expectancy_max"] is not None:
+            typer.echo(f"      Expectancy max: {diagnostics['expectancy_max']}")
+        if diagnostics["profit_factor_min"] is not None:
+            typer.echo(f"      Profit factor min: {diagnostics['profit_factor_min']}")
+        if diagnostics["profit_factor_max"] is not None:
+            typer.echo(f"      Profit factor max: {diagnostics['profit_factor_max']}")
         typer.echo("")
 
 
