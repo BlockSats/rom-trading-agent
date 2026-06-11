@@ -37,6 +37,9 @@ The project includes:
 * All exchange integrations must default to public data, paper mode, or simulation mode.
 * Any future live-trading feature must require an explicit safety gate and dedicated user approval.
 * Any new strategy must be deterministic, testable, and backtestable.
+* Do not add `best_strategy`.
+* Do not add automatic strategy promotion.
+* Do not add automatic strategy selection unless explicitly requested by the user.
 
 ## Development workflow
 
@@ -119,6 +122,7 @@ tradebot config --section goal
 * Do not use `git clean -fd` unless explicitly requested.
 * Show `git status --short -uall` before committing.
 * Show `git diff` before committing.
+* Do not commit, tag, merge, or push without explicit user approval.
 * Commit messages should be short and explicit.
 
 Recommended branch naming:
@@ -140,7 +144,7 @@ python -m pytest
 Expected result:
 
 ```text
-63 passed
+104 passed, 4 warnings
 ```
 
 Warnings related to intentional OHLCV gap detection are acceptable unless the task specifically concerns warning handling.
@@ -189,18 +193,26 @@ When modifying research cycle, reflection, or robustness logic:
 * Robustness validation should penalize unstable or overfit behavior.
 * Add tests for edge cases and failure paths.
 
-## First Codex task
+## Current next task
 
-The first development task is:
+`v0.25` — add a read-only CLI command `tradebot research-policy`.
 
-Improve `tradebot config` so that it prints a readable default output when no section is provided.
+It should display `config/research_policy.yaml` in a human-readable format.
 
 Constraints:
 
+* Read `config/research_policy.yaml`.
+* Display the research policy clearly.
+* Do not modify the YAML file.
+* Do not modify `strategy.yaml`.
+* Do not recalculate backtests.
+* Do not add `best_strategy`.
+* Do not add automatic strategy selection.
+* Do not add live trading.
+* Do not touch `.env`.
 * Keep the change small.
 * Do not break existing tests.
 * Add or update CLI tests if needed.
 * Run `python -m pytest`.
 * Show the diff before proposing a commit.
-
 
