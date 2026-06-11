@@ -197,6 +197,38 @@ def summarize_window_results_by_strategy(results: list[dict[str, Any]]) -> list[
     return strategy_summaries
 
 
+def _run_windows_for_asset(
+    ohlcv: pd.DataFrame,
+    windows: int,
+    base_strategy: dict[str, Any],
+    goal: dict[str, Any],
+) -> dict[str, Any]:
+    strategy_variants = [
+        build_strategy_variant(base_strategy, "rsi_baseline"),
+        build_strategy_variant(base_strategy, "ema_atr_trend"),
+        build_strategy_variant(base_strategy, "donchian_breakout"),
+    ]
+    results = []
+    start_index = 0
+    for window_number, window_df in enumerate(split_dataframe_windows(ohlcv, windows), start=1):
+        end_index = start_index + len(window_df) - 1
+        results.append({
+            "window": window_number,
+            "start_index": int(start_index),
+            "end_index": int(end_index),
+            "rows": int(len(window_df)),
+            "strategies": [
+                summarize_strategy_on_dataframe(window_df, strategy, goal)
+                for strategy in strategy_variants
+            ],
+        })
+        start_index = end_index + 1
+    return {
+        "results": results,
+        "summary_by_strategy": summarize_window_results_by_strategy(results),
+    }
+
+
 def classify_strategy_summary(summary: dict[str, Any], research_policy: dict[str, Any]) -> str:
     thresholds = research_policy["comparison_acceptance"]
     min_total_trades = int(thresholds["min_total_trades"])
@@ -930,6 +962,108 @@ def compare_strategies_windows_csv(
         "gaps": gaps,
         "results": results,
         "summary_by_strategy": summarize_window_results_by_strategy(results),
+        "output_dir": str(outputs_dir),
+        "report_path": str(report_path),
+    }
+
+    write_json(report_path, report)
+    echo_json(report)
+
+
+@app.command("compare-strategies-assets-csv")
+def compare_strategies_assets_csv(
+    asset: list[str] = typer.Option(
+        [],
+        "--asset",
+        help="Asset to compare as SYMBOL:path/to/file.csv. Repeat for multiple assets.",
+    ),
+    windows: int = typer.Option(
+        4,
+        "--windows",
+        help="Number of chronological windows used for strategy comparison.",
+    ),
+) -> None:
+    """Compare strategy candidates across multiple assets from local OHLCV CSV files."""
+    parsed_assets = []
+    for asset_str in asset:
+        if ":" not in asset_str:
+            echo_json({
+                "command": "compare-strategies-assets-csv",
+                "status": "failed",
+                "reason": "invalid_asset_format",
+                "asset": asset_str,
+                "expected_format": "SYMBOL:path/to/file.csv",
+            })
+            raise typer.Exit(code=1)
+        symbol, csv_path_str = asset_str.split(":", 1)
+        if not symbol:
+            echo_json({
+                "command": "compare-strategies-assets-csv",
+                "status": "failed",
+                "reason": "empty_symbol",
+                "asset": asset_str,
+            })
+            raise typer.Exit(code=1)
+        if not csv_path_str:
+            echo_json({
+                "command": "compare-strategies-assets-csv",
+                "status": "failed",
+                "reason": "empty_csv_path",
+                "asset": asset_str,
+            })
+            raise typer.Exit(code=1)
+        parsed_assets.append((symbol, csv_path_str))
+
+    if windows < 2:
+        echo_json({
+            "command": "compare-strategies-assets-csv",
+            "status": "failed",
+            "reason": "windows_must_be_at_least_2",
+            "windows": windows,
+        })
+        raise typer.Exit(code=1)
+
+    base_strategy = load_strategy()
+    goal = load_goal()
+
+    loaded_assets = []
+    for symbol, csv_path_str in parsed_assets:
+        ohlcv = load_ohlcv_csv(Path(csv_path_str))
+        if windows > len(ohlcv):
+            echo_json({
+                "command": "compare-strategies-assets-csv",
+                "status": "failed",
+                "reason": "windows_must_not_exceed_rows",
+                "windows": windows,
+                "symbol": symbol,
+                "csv_path": csv_path_str,
+                "rows": int(len(ohlcv)),
+            })
+            raise typer.Exit(code=1)
+        loaded_assets.append((symbol, csv_path_str, ohlcv))
+
+    results_by_asset: dict[str, Any] = {}
+    for symbol, csv_path_str, ohlcv in loaded_assets:
+        gaps = detect_time_gaps(ohlcv)
+        window_output = _run_windows_for_asset(ohlcv, windows, base_strategy, goal)
+        results_by_asset[symbol] = {
+            "csv_path": csv_path_str,
+            "rows": int(len(ohlcv)),
+            "gaps_detected": int(len(gaps)),
+            "gaps": gaps,
+            "results": window_output["results"],
+            "summary_by_strategy": window_output["summary_by_strategy"],
+        }
+
+    outputs_dir = Path("outputs")
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    report_path = outputs_dir / "strategy_assets_comparison_report.json"
+    report = {
+        "command": "compare-strategies-assets-csv",
+        "windows": windows,
+        "assets": [symbol for symbol, _, _ in loaded_assets],
+        "strategies": ["rsi_baseline", "ema_atr_trend", "donchian_breakout"],
+        "results_by_asset": results_by_asset,
         "output_dir": str(outputs_dir),
         "report_path": str(report_path),
     }
