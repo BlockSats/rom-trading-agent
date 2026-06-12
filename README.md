@@ -1,11 +1,18 @@
 # rom-trading-agent
 
-Local-first paper-trading research agent foundation for Linux systems.
+Local-first Python trading research agent for backtesting, scoring, and paper trading.
+
+Not a live trading bot. Research and simulation only.
+
+See [Project Status](docs/PROJECT_STATUS.md) for the current version and test baseline.
 
 ## Safety
 
-Phase 1 is paper trading only.
-No live trading, no exchange order execution, no private exchange keys, no cloud deployment, and no LLM API calls are implemented here.
+- No live trading
+- No real exchange orders
+- No API keys required for local workflows
+- No secrets in the repository
+- Paper-only, research-first
 
 ## Installation
 
@@ -16,79 +23,53 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-## Basic Commands
+## Current Capabilities
+
+- CSV OHLCV loading and validation
+- Local backtesting
+- Multi-window strategy comparison
+- Multi-asset strategy comparison
+- Report display
+- Window robustness diagnostics
+- Display filters by asset and strategy
+- Strategy candidates: `rsi_baseline`, `ema_atr_trend`, `donchian_breakout`
+
+## Useful Commands
 
 ```bash
-trading-agent check
-trading-agent run-once
-trading-agent score
-trading-agent reflect
-trading-agent backtest-csv data/btc_usdt_1h.csv
-pytest
+python -m pytest
+
+tradebot check
+tradebot backtest-csv data/btc_usdt_1h.csv
+
+tradebot compare-strategies-windows-csv data/btc_usdt_1h.csv
+tradebot compare-strategies-assets-csv \
+  --asset BTCUSDT:data/btc_usdt_1h.csv \
+  --asset ETHUSDT:data/eth_usdt_1h.csv
+
+tradebot show-comparison-report
+tradebot show-assets-comparison-report
+tradebot show-assets-comparison-report --asset BTCUSDT
+tradebot show-assets-comparison-report --strategy rsi_baseline
 ```
-
-## Phase 2 CSV Backtest
-
-Phase 2 adds a read-only historical backtest path for local CSV OHLCV files.
-
-Expected CSV columns:
-
-```text
-timestamp,open,high,low,close,volume
-```
-
-Rules:
-
-- `timestamp` is parsed as datetime.
-- `open`, `high`, `low`, `close`, and `volume` must be numeric.
-- Rows are sorted by timestamp ascending.
-- Duplicate timestamps are rejected.
-- Missing required columns raise `ValueError`.
-- Invalid OHLC values raise `ValueError`.
-- Gaps are reported as warnings, not hard failures.
-
-Example:
-
-```bash
-trading-agent backtest-csv data/btc_usdt_1h.csv
-```
-
-The CSV backtest writes `outputs/backtest_report.json` and `outputs/backtest_trades.jsonl` only.
-It does not modify `state/trades.jsonl`, strategy files, or strategy history.
 
 ## Repository Layout
 
 ```text
 config/        YAML configuration
 data/          Local sample data and placeholders
+docs/          Project documentation
 state/         Append-only state files and history
 src/trading_agent/
-tests/         Phase 1 tests
+tests/
+outputs/       Generated reports (not committed by default)
 ```
 
-## Phase 1 Scope
+## Limits
 
-- Python project scaffold
-- Safe config loading and validation
-- Deterministic sample data
-- RSI indicator
-- Simple paper broker
-- One-pass strategy runner
-- Local CSV OHLCV loading
-- Deterministic historical backtesting
-- Append-only storage helpers
-- Deterministic scoring
-- Deterministic fallback reflection
-- Typer CLI commands
-
-## Not Implemented Yet
-
-- Live trading
-- Real exchange integration
-- Private API keys
-- Autonomous infinite loops
-- Docker
-- Railway
-- Hermes
-- Cloud deployment
-- LLM API calls
+- No live trading
+- No strategy declared profitable
+- Candidate strategies only — not validated for production use
+- No Walk-Forward Analysis yet
+- No DSR / PBO yet
+- No auto-selection of strategies
