@@ -552,8 +552,25 @@ def test_show_assets_comparison_report_no_forbidden_keys(tmp_path: Path) -> None
         assert forbidden not in result.stdout
 
 
+_MINIMAL_RESEARCH_POLICY_YAML = """\
+comparison_acceptance:
+  min_total_trades: 10
+  min_windows_with_trades: 2
+  min_positive_expectancy_windows: 2
+  min_average_expectancy: 0.0
+  min_average_profit_factor: 1.1
+"""
+
+
+def _write_research_policy(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "research_policy.yaml").write_text(_MINIMAL_RESEARCH_POLICY_YAML, encoding="utf-8")
+
+
 def test_show_assets_comparison_report_does_not_modify_trades(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
+    _write_research_policy(tmp_path)
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     trades_file = state_dir / "trades.jsonl"
@@ -569,6 +586,7 @@ def test_show_assets_comparison_report_does_not_modify_trades(tmp_path: Path, mo
 
 def test_show_assets_comparison_report_does_not_modify_hypotheses(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
+    _write_research_policy(tmp_path)
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     hyp_file = state_dir / "hypotheses.jsonl"
@@ -611,3 +629,189 @@ def test_show_assets_comparison_report_default_path_missing(tmp_path: Path, monk
 
     assert result.exit_code == 1
     assert "Assets comparison report not found" in result.stderr
+
+
+# --- v0.36: research status, reasons, window robustness diagnostics ---
+
+_ASSETS_REPORT_WITH_RESULTS = {
+    "command": "compare-strategies-assets-csv",
+    "windows": 2,
+    "assets": ["BTCUSDT"],
+    "strategies": ["rsi_baseline"],
+    "output_dir": "outputs",
+    "report_path": "outputs/strategy_assets_comparison_report.json",
+    "results_by_asset": {
+        "BTCUSDT": {
+            "csv_path": "data/BTCUSDT_1h.csv",
+            "rows": 40,
+            "gaps_detected": 0,
+            "results": [
+                {
+                    "window": 1,
+                    "strategies": [
+                        {
+                            "strategy_id": "rsi_baseline",
+                            "closed_trades": 6,
+                            "expectancy": 50.0,
+                            "profit_factor": 1.3,
+                        }
+                    ],
+                },
+                {
+                    "window": 2,
+                    "strategies": [
+                        {
+                            "strategy_id": "rsi_baseline",
+                            "closed_trades": 6,
+                            "expectancy": -10.0,
+                            "profit_factor": 0.9,
+                        }
+                    ],
+                },
+            ],
+            "summary_by_strategy": [
+                {
+                    "strategy_id": "rsi_baseline",
+                    "windows": 2,
+                    "windows_with_trades": 2,
+                    "total_trades": 12,
+                    "positive_expectancy_windows": 1,
+                    "average_expectancy": 20.0,
+                    "average_profit_factor": 1.1,
+                }
+            ],
+        }
+    },
+}
+
+
+def test_show_assets_comparison_report_shows_research_status(tmp_path: Path) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Research status:" in result.stdout
+
+
+def test_show_assets_comparison_report_shows_reasons(tmp_path: Path) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Reasons:" in result.stdout
+
+
+def test_show_assets_comparison_report_shows_window_robustness_when_results_present(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT_WITH_RESULTS), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Window robustness diagnostics" in result.stdout
+    assert "Zero trade windows:" in result.stdout
+    assert "Negative expectancy windows:" in result.stdout
+
+
+def test_show_assets_comparison_report_no_window_robustness_when_results_absent(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Window robustness diagnostics" not in result.stdout
+
+
+def test_show_assets_comparison_report_no_results_does_not_crash(tmp_path: Path) -> None:
+    report = {
+        "command": "compare-strategies-assets-csv",
+        "windows": 2,
+        "results_by_asset": {
+            "BTCUSDT": {
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 40,
+                "gaps_detected": 0,
+                "summary_by_strategy": [
+                    {
+                        "strategy_id": "rsi_baseline",
+                        "windows": 2,
+                        "windows_with_trades": 2,
+                        "total_trades": 12,
+                        "positive_expectancy_windows": 2,
+                        "average_expectancy": 50.0,
+                        "average_profit_factor": 1.2,
+                    }
+                ],
+            }
+        },
+    }
+    report_path = tmp_path / "no_results.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Research status:" in result.stdout
+    assert "Window robustness diagnostics" not in result.stdout
+
+
+def test_show_assets_comparison_report_no_backtest_launched(tmp_path: Path) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "backtest" not in result.stdout.lower()
+
+
+def test_show_assets_comparison_report_no_csv_load(tmp_path: Path) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    assert "Loading CSV" not in result.stdout
+    assert "load_ohlcv" not in result.stdout
+
+
+def test_show_assets_comparison_report_no_file_created(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+    files_before = set(tmp_path.rglob("*"))
+
+    runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    files_after = set(tmp_path.rglob("*"))
+    assert files_after == files_before
+
+
+def test_show_assets_comparison_report_no_forbidden_keys_extended(tmp_path: Path) -> None:
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT_WITH_RESULTS), encoding="utf-8")
+
+    result = runner.invoke(app, ["show-assets-comparison-report", "--path", str(report_path)])
+
+    assert result.exit_code == 0
+    for forbidden in [
+        "best_strategy",
+        "best_asset",
+        "winner",
+        "rank",
+        "ranking",
+        "global_score",
+        "selected_strategy",
+    ]:
+        assert forbidden not in result.stdout
