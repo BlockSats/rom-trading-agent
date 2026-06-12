@@ -1096,3 +1096,401 @@ def test_show_assets_report_filter_no_trades_modified(tmp_path: Path) -> None:
     )
 
     assert trades_path.stat().st_mtime == mtime_before
+
+
+# --- show-assets-comparison-report --list-assets / --list-strategies ---
+
+_MULTI_STRATEGY_ASSETS_REPORT = {
+    "command": "compare-strategies-assets-csv",
+    "windows": 4,
+    "assets": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    "strategies": ["rsi_baseline", "ema_atr_trend", "donchian_breakout"],
+    "output_dir": "outputs",
+    "report_path": "outputs/strategy_assets_comparison_report.json",
+    "results_by_asset": {
+        "BTCUSDT": {
+            "csv_path": "data/BTCUSDT_1h.csv",
+            "rows": 80,
+            "gaps_detected": 0,
+            "summary_by_strategy": [
+                {
+                    "strategy_id": "rsi_baseline",
+                    "windows": 4,
+                    "windows_with_trades": 3,
+                    "total_trades": 12,
+                    "positive_expectancy_windows": 2,
+                    "average_expectancy": 75.0,
+                    "average_profit_factor": 1.4,
+                },
+                {
+                    "strategy_id": "ema_atr_trend",
+                    "windows": 4,
+                    "windows_with_trades": 2,
+                    "total_trades": 8,
+                    "positive_expectancy_windows": 1,
+                    "average_expectancy": 30.0,
+                    "average_profit_factor": 1.2,
+                },
+            ],
+        },
+        "ETHUSDT": {
+            "csv_path": "data/ETHUSDT_1h.csv",
+            "rows": 60,
+            "gaps_detected": 0,
+            "summary_by_strategy": [
+                {
+                    "strategy_id": "ema_atr_trend",
+                    "windows": 4,
+                    "windows_with_trades": 2,
+                    "total_trades": 6,
+                    "positive_expectancy_windows": 1,
+                    "average_expectancy": 20.0,
+                    "average_profit_factor": 1.1,
+                },
+                {
+                    "strategy_id": "donchian_breakout",
+                    "windows": 4,
+                    "windows_with_trades": 3,
+                    "total_trades": 10,
+                    "positive_expectancy_windows": 2,
+                    "average_expectancy": 55.0,
+                    "average_profit_factor": 1.3,
+                },
+            ],
+        },
+        "SOLUSDT": {
+            "csv_path": "data/SOLUSDT_1h.csv",
+            "rows": 50,
+            "gaps_detected": 0,
+            "summary_by_strategy": [
+                {
+                    "strategy_id": "donchian_breakout",
+                    "windows": 4,
+                    "windows_with_trades": 4,
+                    "total_trades": 14,
+                    "positive_expectancy_windows": 3,
+                    "average_expectancy": 80.0,
+                    "average_profit_factor": 1.5,
+                },
+            ],
+        },
+    },
+}
+
+
+def test_show_assets_report_list_assets_basic(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-assets"],
+    )
+
+    assert result.exit_code == 0
+    assert "Assets in report:" in result.stdout
+    assert "BTCUSDT" in result.stdout
+    assert "ETHUSDT" in result.stdout
+    assert "SOLUSDT" in result.stdout
+
+
+def test_show_assets_report_list_assets_order(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-assets"],
+    )
+
+    assert result.exit_code == 0
+    btc_pos = result.stdout.index("BTCUSDT")
+    eth_pos = result.stdout.index("ETHUSDT")
+    sol_pos = result.stdout.index("SOLUSDT")
+    assert btc_pos < eth_pos < sol_pos
+
+
+def test_show_assets_report_list_assets_no_full_report(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-assets"],
+    )
+
+    assert result.exit_code == 0
+    assert "Assets comparison report" not in result.stdout
+    assert "Results by asset" not in result.stdout
+    assert "Summary by strategy" not in result.stdout
+
+
+def test_show_assets_report_list_strategies_basic(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-strategies"],
+    )
+
+    assert result.exit_code == 0
+    assert "Strategies in report:" in result.stdout
+    assert "rsi_baseline" in result.stdout
+    assert "ema_atr_trend" in result.stdout
+    assert "donchian_breakout" in result.stdout
+
+
+def test_show_assets_report_list_strategies_order(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-strategies"],
+    )
+
+    assert result.exit_code == 0
+    # rsi_baseline apparaît en premier (BTCUSDT), ema_atr_trend en second (BTCUSDT),
+    # donchian_breakout en troisième (ETHUSDT) — ordre de première apparition
+    rsi_pos = result.stdout.index("rsi_baseline")
+    ema_pos = result.stdout.index("ema_atr_trend")
+    don_pos = result.stdout.index("donchian_breakout")
+    assert rsi_pos < ema_pos < don_pos
+
+
+def test_show_assets_report_list_strategies_no_full_report(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-strategies"],
+    )
+
+    assert result.exit_code == 0
+    assert "Assets comparison report" not in result.stdout
+    assert "Results by asset" not in result.stdout
+    assert "Summary by strategy" not in result.stdout
+
+
+def test_show_assets_report_list_assets_and_strategies(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--list-assets",
+            "--list-strategies",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Assets in report:" in result.stdout
+    assert "Strategies in report:" in result.stdout
+    assert "BTCUSDT" in result.stdout
+    assert "rsi_baseline" in result.stdout
+    assert "Assets comparison report" not in result.stdout
+
+
+def test_show_assets_report_list_strategies_with_asset_filter(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--asset", "ETHUSDT",
+            "--list-strategies",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Strategies in report:" in result.stdout
+    assert "ema_atr_trend" in result.stdout
+    assert "donchian_breakout" in result.stdout
+    # rsi_baseline n'est pas dans ETHUSDT
+    assert "rsi_baseline" not in result.stdout
+
+
+def test_show_assets_report_list_assets_with_strategy_filter(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--strategy", "donchian_breakout",
+            "--list-assets",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Assets in report:" in result.stdout
+    assert "ETHUSDT" in result.stdout
+    assert "SOLUSDT" in result.stdout
+    # BTCUSDT ne contient pas donchian_breakout
+    assert "BTCUSDT" not in result.stdout
+
+
+def test_show_assets_report_list_unknown_asset_exits(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--asset", "UNKNOWN",
+            "--list-strategies",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Error" in result.stdout
+
+
+def test_show_assets_report_list_unknown_strategy_exits(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--strategy", "unknown_strategy",
+            "--list-assets",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Error" in result.stdout
+
+
+def test_show_assets_report_list_assets_no_summary(tmp_path: Path) -> None:
+    report_no_summary = {
+        "command": "compare-strategies-assets-csv",
+        "windows": 2,
+        "assets": ["BTCUSDT"],
+        "strategies": [],
+        "output_dir": "outputs",
+        "report_path": "outputs/strategy_assets_comparison_report.json",
+        "results_by_asset": {
+            "BTCUSDT": {"csv_path": "data/BTCUSDT_1h.csv", "rows": 40, "gaps_detected": 0},
+            "ETHUSDT": {"csv_path": "data/ETHUSDT_1h.csv", "rows": 30, "gaps_detected": 0},
+        },
+    }
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(report_no_summary), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-assets"],
+    )
+
+    assert result.exit_code == 0
+    assert "Assets in report:" in result.stdout
+    assert "BTCUSDT" in result.stdout
+    assert "ETHUSDT" in result.stdout
+
+
+def test_show_assets_report_list_strategies_no_summary(tmp_path: Path) -> None:
+    report_no_summary = {
+        "command": "compare-strategies-assets-csv",
+        "windows": 2,
+        "assets": ["BTCUSDT"],
+        "strategies": [],
+        "output_dir": "outputs",
+        "report_path": "outputs/strategy_assets_comparison_report.json",
+        "results_by_asset": {
+            "BTCUSDT": {"csv_path": "data/BTCUSDT_1h.csv", "rows": 40, "gaps_detected": 0},
+        },
+    }
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(report_no_summary), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-strategies"],
+    )
+
+    assert result.exit_code == 0
+    assert "No strategies found in report." in result.stdout
+
+
+def test_show_assets_report_list_no_forbidden_keys(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--list-assets",
+            "--list-strategies",
+        ],
+    )
+
+    assert result.exit_code == 0
+    forbidden = [
+        "best_strategy", "best_asset", "winner", "rank", "ranking",
+        "global_score", "selected_strategy",
+    ]
+    for key in forbidden:
+        assert key not in result.stdout
+
+
+def test_show_assets_report_list_no_file_created(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+    files_before = set(tmp_path.rglob("*"))
+
+    runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-assets"],
+    )
+
+    files_after = set(tmp_path.rglob("*"))
+    assert files_after == files_before
+
+
+def test_show_assets_report_list_no_trades_modified(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_MULTI_STRATEGY_ASSETS_REPORT), encoding="utf-8")
+    trades_path = tmp_path / "trades.jsonl"
+    trades_path.write_text("", encoding="utf-8")
+    mtime_before = trades_path.stat().st_mtime
+
+    runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--list-assets"],
+    )
+
+    assert trades_path.stat().st_mtime == mtime_before

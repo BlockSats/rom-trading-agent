@@ -1254,6 +1254,16 @@ def show_assets_comparison_report(
         "--strategy",
         help="Filter display by strategy ID. Repeat for multiple strategies.",
     ),
+    list_assets: bool = typer.Option(
+        False,
+        "--list-assets",
+        help="List available assets in the report and exit.",
+    ),
+    list_strategies: bool = typer.Option(
+        False,
+        "--list-strategies",
+        help="List available strategies in the report and exit.",
+    ),
 ) -> None:
     """Read and display a previously generated multi-asset comparison report."""
     report = load_assets_comparison_report(path)
@@ -1277,6 +1287,38 @@ def show_assets_comparison_report(
         if unknown_s:
             typer.echo(f"Error: strategy(ies) not found in report: {', '.join(unknown_s)}")
             raise typer.Exit(code=1)
+
+    if list_assets or list_strategies:
+        if list_assets:
+            typer.echo("Assets in report:")
+            for asset, asset_data in report["results_by_asset"].items():
+                if asset_filter and asset not in asset_filter:
+                    continue
+                if strategy_filter:
+                    known = {s.get("strategy_id", "") for s in asset_data.get("summary_by_strategy", [])}
+                    if not any(sf in known for sf in strategy_filter):
+                        continue
+                typer.echo(f"  {asset}")
+        if list_strategies:
+            if list_assets:
+                typer.echo("")
+            seen: set[str] = set()
+            strategy_list: list[str] = []
+            for asset, asset_data in report["results_by_asset"].items():
+                if asset_filter and asset not in asset_filter:
+                    continue
+                for s in asset_data.get("summary_by_strategy", []):
+                    sid = s.get("strategy_id", "")
+                    if sid and (not strategy_filter or sid in strategy_filter) and sid not in seen:
+                        seen.add(sid)
+                        strategy_list.append(sid)
+            if strategy_list:
+                typer.echo("Strategies in report:")
+                for sid in strategy_list:
+                    typer.echo(f"  {sid}")
+            else:
+                typer.echo("No strategies found in report.")
+        return
 
     typer.echo("Assets comparison report")
     _display_report_fields(report, [
