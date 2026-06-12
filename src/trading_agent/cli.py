@@ -327,6 +327,19 @@ def _get_strategy_window_results(
     return out
 
 
+def _get_asset_strategy_window_results(
+    asset_data: dict[str, Any], strategy_id: str
+) -> list[dict[str, Any]]:
+    """Extract per-window results for one strategy from asset_data['results']."""
+    out = []
+    for window in asset_data.get("results", []):
+        for sr in window.get("strategies", []):
+            if str(sr.get("strategy_id")) == strategy_id:
+                out.append(sr)
+                break
+    return out
+
+
 def compute_window_robustness_diagnostics(
     summary: dict[str, Any],
     window_results: list[dict[str, Any]],
@@ -1234,6 +1247,7 @@ def show_assets_comparison_report(
 ) -> None:
     """Read and display a previously generated multi-asset comparison report."""
     report = load_assets_comparison_report(path)
+    research_policy = load_research_policy()
 
     typer.echo("Assets comparison report")
     _display_report_fields(report, [
@@ -1258,6 +1272,7 @@ def show_assets_comparison_report(
             typer.echo(f"    Gaps detected: {asset_data['gaps_detected']}")
         if "summary_by_strategy" in asset_data:
             typer.echo("    Summary by strategy")
+            asset_has_results = bool(asset_data.get("results"))
             for s in asset_data["summary_by_strategy"]:
                 strategy_id = s.get("strategy_id", "")
                 typer.echo(f"      {strategy_id}")
@@ -1271,6 +1286,28 @@ def show_assets_comparison_report(
                 ]:
                     if key in s:
                         typer.echo(f"        {label}: {s[key]}")
+                classification = classify_strategy_summary(s, research_policy)
+                typer.echo(f"        Research status: {classification}")
+                reasons = get_classification_reasons(s, research_policy, classification)
+                typer.echo(f"        Reasons: {', '.join(reasons)}")
+                if asset_has_results:
+                    window_results = _get_asset_strategy_window_results(asset_data, strategy_id)
+                    diag = compute_window_robustness_diagnostics(s, window_results)
+                    typer.echo("        Window robustness diagnostics")
+                    for diag_key, diag_label in [
+                        ("zero_trade_windows", "Zero trade windows"),
+                        ("window_participation_rate", "Window participation rate"),
+                        ("positive_expectancy_rate", "Positive expectancy rate"),
+                        ("average_trades_per_active_window", "Average trades per active window"),
+                        ("negative_expectancy_windows", "Negative expectancy windows"),
+                        ("expectancy_min", "Expectancy min"),
+                        ("expectancy_max", "Expectancy max"),
+                        ("profit_factor_min", "Profit factor min"),
+                        ("profit_factor_max", "Profit factor max"),
+                    ]:
+                        value = diag.get(diag_key)
+                        if value is not None:
+                            typer.echo(f"          {diag_label}: {value}")
         typer.echo("")
 
 
