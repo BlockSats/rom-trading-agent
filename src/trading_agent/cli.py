@@ -1244,10 +1244,39 @@ def show_assets_comparison_report(
         "--path",
         help="Path to a multi-asset strategy comparison report JSON.",
     ),
+    assets: list[str] | None = typer.Option(
+        None,
+        "--asset",
+        help="Filter display by asset symbol. Repeat for multiple assets.",
+    ),
+    strategies: list[str] | None = typer.Option(
+        None,
+        "--strategy",
+        help="Filter display by strategy ID. Repeat for multiple strategies.",
+    ),
 ) -> None:
     """Read and display a previously generated multi-asset comparison report."""
     report = load_assets_comparison_report(path)
     research_policy = load_research_policy()
+
+    asset_filter = assets or []
+    strategy_filter = strategies or []
+
+    if asset_filter:
+        unknown = [a for a in asset_filter if a not in report["results_by_asset"]]
+        if unknown:
+            typer.echo(f"Error: asset(s) not found in report: {', '.join(unknown)}")
+            raise typer.Exit(code=1)
+
+    if strategy_filter:
+        all_known: set[str] = set()
+        for ad in report["results_by_asset"].values():
+            for s in ad.get("summary_by_strategy", []):
+                all_known.add(s.get("strategy_id", ""))
+        unknown_s = [s for s in strategy_filter if s not in all_known]
+        if unknown_s:
+            typer.echo(f"Error: strategy(ies) not found in report: {', '.join(unknown_s)}")
+            raise typer.Exit(code=1)
 
     typer.echo("Assets comparison report")
     _display_report_fields(report, [
@@ -1263,6 +1292,8 @@ def show_assets_comparison_report(
     typer.echo("Results by asset")
 
     for asset, asset_data in report["results_by_asset"].items():
+        if asset_filter and asset not in asset_filter:
+            continue
         typer.echo(f"  {asset}")
         if "csv_path" in asset_data:
             typer.echo(f"    CSV path: {asset_data['csv_path']}")
@@ -1275,6 +1306,8 @@ def show_assets_comparison_report(
             asset_has_results = bool(asset_data.get("results"))
             for s in asset_data["summary_by_strategy"]:
                 strategy_id = s.get("strategy_id", "")
+                if strategy_filter and strategy_id not in strategy_filter:
+                    continue
                 typer.echo(f"      {strategy_id}")
                 for key, label in [
                     ("windows", "Windows"),

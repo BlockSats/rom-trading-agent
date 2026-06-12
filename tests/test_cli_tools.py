@@ -815,3 +815,284 @@ def test_show_assets_comparison_report_no_forbidden_keys_extended(tmp_path: Path
         "selected_strategy",
     ]:
         assert forbidden not in result.stdout
+
+
+# --- show-assets-comparison-report display filters (v0.37) ---
+
+
+def test_show_assets_report_filter_single_asset(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["show-assets-comparison-report", "--path", str(report_path), "--asset", "BTCUSDT"],
+    )
+
+    assert result.exit_code == 0
+    # "  BTCUSDT" (2 spaces) is the indented result entry
+    assert "  BTCUSDT" in result.stdout
+    assert "  ETHUSDT" not in result.stdout
+
+
+def test_show_assets_report_filter_multiple_assets(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--asset", "BTCUSDT",
+            "--asset", "ETHUSDT",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "BTCUSDT" in result.stdout
+    assert "ETHUSDT" in result.stdout
+
+
+def test_show_assets_report_filter_asset_order_preserved(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--asset", "ETHUSDT",
+            "--asset", "BTCUSDT",
+        ],
+    )
+
+    assert result.exit_code == 0
+    btc_pos = result.stdout.index("BTCUSDT")
+    eth_pos = result.stdout.index("ETHUSDT")
+    assert btc_pos < eth_pos
+
+
+def test_show_assets_report_filter_single_strategy(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--strategy", "rsi_baseline",
+        ],
+    )
+
+    assert result.exit_code == 0
+    # "      rsi_baseline" (6 spaces) is the indented strategy entry in results
+    assert "      rsi_baseline" in result.stdout
+    assert "      ema_atr_trend" not in result.stdout
+
+
+def test_show_assets_report_filter_multiple_strategies(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--strategy", "rsi_baseline",
+            "--strategy", "ema_atr_trend",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "rsi_baseline" in result.stdout
+    assert "ema_atr_trend" in result.stdout
+
+
+def test_show_assets_report_filter_strategy_order_preserved(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--strategy", "ema_atr_trend",
+            "--strategy", "rsi_baseline",
+        ],
+    )
+
+    assert result.exit_code == 0
+    rsi_pos = result.stdout.index("rsi_baseline")
+    ema_pos = result.stdout.index("ema_atr_trend")
+    assert rsi_pos < ema_pos
+
+
+def test_show_assets_report_filter_combined_asset_strategy(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--asset", "BTCUSDT",
+            "--strategy", "rsi_baseline",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "  BTCUSDT" in result.stdout
+    assert "      rsi_baseline" in result.stdout
+    assert "  ETHUSDT" not in result.stdout
+    assert "      ema_atr_trend" not in result.stdout
+
+
+def test_show_assets_report_filter_unknown_asset_exits(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--asset", "XYZUSDT",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "XYZUSDT" in result.stdout
+    assert "not found" in result.stdout
+
+
+def test_show_assets_report_filter_unknown_strategy_exits(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--strategy", "unknown_strategy",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "unknown_strategy" in result.stdout
+    assert "not found" in result.stdout
+
+
+def test_show_assets_report_filter_no_summary_strategy_filter_exits(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_without_summary = {
+        "command": "compare-strategies-assets-csv",
+        "windows": 4,
+        "assets": ["BTCUSDT"],
+        "strategies": ["rsi_baseline"],
+        "output_dir": "outputs",
+        "report_path": "outputs/strategy_assets_comparison_report.json",
+        "results_by_asset": {
+            "BTCUSDT": {
+                "csv_path": "data/BTCUSDT_1h.csv",
+                "rows": 80,
+                "gaps_detected": 0,
+            },
+        },
+    }
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(report_without_summary), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--strategy", "rsi_baseline",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "not found" in result.stdout
+
+
+def test_show_assets_report_filter_no_forbidden_keys_with_filters(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--asset", "BTCUSDT",
+            "--strategy", "rsi_baseline",
+        ],
+    )
+
+    assert result.exit_code == 0
+    for forbidden in [
+        "best_strategy",
+        "best_asset",
+        "winner",
+        "rank",
+        "ranking",
+        "global_score",
+        "selected_strategy",
+    ]:
+        assert forbidden not in result.stdout
+
+
+def test_show_assets_report_filter_no_file_created(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+    files_before = set(tmp_path.rglob("*"))
+
+    runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--asset", "BTCUSDT",
+        ],
+    )
+
+    files_after = set(tmp_path.rglob("*"))
+    assert files_after == files_before
+
+
+def test_show_assets_report_filter_no_trades_modified(tmp_path: Path) -> None:
+    _write_research_policy(tmp_path)
+    report_path = tmp_path / "assets_report.json"
+    report_path.write_text(json.dumps(_ASSETS_REPORT), encoding="utf-8")
+    trades_path = tmp_path / "trades.jsonl"
+    trades_path.write_text("", encoding="utf-8")
+    mtime_before = trades_path.stat().st_mtime
+
+    runner.invoke(
+        app,
+        [
+            "show-assets-comparison-report",
+            "--path", str(report_path),
+            "--asset", "BTCUSDT",
+        ],
+    )
+
+    assert trades_path.stat().st_mtime == mtime_before
