@@ -1237,6 +1237,87 @@ def show_backtest_report(
     ])
 
 
+@app.command("show-walk-forward-report")
+def show_walk_forward_report(
+    path: Path = typer.Option(
+        Path("outputs/walk_forward_report.json"),
+        "--path",
+        help="Path to a walk-forward report JSON.",
+    ),
+) -> None:
+    """Read and display a previously generated walk-forward report."""
+    payload = _load_report_json(
+        path,
+        "Walk-forward report not found",
+        "Invalid walk-forward report JSON",
+    )
+
+    typer.echo("Walk-forward report")
+
+    wf = payload.get("walk_forward")
+    if isinstance(wf, dict) and wf:
+        typer.echo("  Walk-Forward")
+        for key, label in [
+            ("train_window", "Train window"),
+            ("test_window", "Test window"),
+            ("step", "Step"),
+            ("windows", "Windows"),
+        ]:
+            if key in wf:
+                typer.echo(f"    {label}: {wf[key]}")
+
+    strat = payload.get("strategy")
+    if isinstance(strat, dict) and strat:
+        typer.echo("  Strategy")
+        for key, label in [
+            ("strategy_id", "Strategy ID"),
+            ("asset", "Asset"),
+            ("timeframe", "Timeframe"),
+        ]:
+            if key in strat:
+                typer.echo(f"    {label}: {strat[key]}")
+
+    sm = payload.get("summary")
+    if isinstance(sm, dict) and sm:
+        typer.echo("  Summary")
+        for key, label in [
+            ("windows", "Windows"),
+            ("windows_with_trades", "Windows with trades"),
+            ("total_trades", "Total trades"),
+        ]:
+            if key in sm:
+                typer.echo(f"    {label}: {sm[key]}")
+
+    results = payload.get("results")
+    if isinstance(results, list):
+        typer.echo("  Results")
+        for r in results:
+            if not isinstance(r, dict):
+                continue
+            idx = r.get("window_index", "?")
+            typer.echo(f"    Window {idx}")
+            for key, label in [
+                ("test_start", "Test start"),
+                ("test_end", "Test end"),
+                ("test_rows", "Test rows"),
+            ]:
+                if key in r:
+                    typer.echo(f"      {label}: {r[key]}")
+            rs = r.get("summary")
+            if not isinstance(rs, dict):
+                rs = {}
+            for key, label in [
+                ("closed_trades", "Closed trades"),
+                ("total_net_pnl", "Total net PnL"),
+                ("total_return", "Total return"),
+                ("max_drawdown", "Max drawdown"),
+                ("profit_factor", "Profit factor"),
+                ("expectancy", "Expectancy"),
+            ]:
+                if key in rs:
+                    typer.echo(f"      {label}: {rs[key]}")
+
+
 @app.command("show-assets-comparison-report")
 def show_assets_comparison_report(
     path: Path = typer.Option(

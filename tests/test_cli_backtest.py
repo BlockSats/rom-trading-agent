@@ -1307,3 +1307,245 @@ def test_compare_strategies_assets_csv_has_no_forbidden_keys(
         "selected_strategy",
     ]:
         assert forbidden not in report_text, f"Forbidden key found: {forbidden}"
+
+
+# ---------------------------------------------------------------------------
+# show-walk-forward-report CLI tests
+# ---------------------------------------------------------------------------
+
+_SAMPLE_WF_REPORT = {
+    "walk_forward": {"train_window": 60, "test_window": 20, "step": 20, "windows": 3},
+    "strategy": {"strategy_id": "rsi_baseline", "asset": "BTC/USDT", "timeframe": "1h"},
+    "summary": {"windows": 3, "windows_with_trades": 2, "total_trades": 7},
+    "results": [
+        {
+            "window_index": 0,
+            "train_start": "2024-01-01 00:00:00",
+            "train_end": "2024-03-01 00:00:00",
+            "test_start": "2024-03-01 00:00:00",
+            "test_end": "2024-04-01 00:00:00",
+            "test_rows": 20,
+            "summary": {
+                "closed_trades": 3,
+                "total_net_pnl": 150.0,
+                "total_return": 0.015,
+                "max_drawdown": 0.05,
+                "profit_factor": 1.5,
+                "expectancy": 50.0,
+            },
+        },
+        {
+            "window_index": 1,
+            "train_start": "2024-02-01 00:00:00",
+            "train_end": "2024-04-01 00:00:00",
+            "test_start": "2024-04-01 00:00:00",
+            "test_end": "2024-05-01 00:00:00",
+            "test_rows": 20,
+            "summary": {
+                "closed_trades": 4,
+                "total_net_pnl": -30.0,
+                "total_return": -0.003,
+                "max_drawdown": 0.02,
+                "profit_factor": 0.8,
+                "expectancy": -7.5,
+            },
+        },
+    ],
+}
+
+
+def _write_wf_report(tmp_path: Path, report: dict | None = None) -> Path:
+    report_path = tmp_path / "outputs" / "walk_forward_report.json"
+    report_path.parent.mkdir(exist_ok=True)
+    report_path.write_text(json.dumps(report or _SAMPLE_WF_REPORT), encoding="utf-8")
+    return report_path
+
+
+def test_show_walk_forward_report_default_path(tmp_path: Path, monkeypatch) -> None:
+    report_path = _write_wf_report(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report"])
+    assert result.exit_code == 0, result.output
+    assert "Walk-forward report" in result.output
+
+
+def test_show_walk_forward_report_explicit_path(tmp_path: Path) -> None:
+    report_path = _write_wf_report(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Walk-forward report" in result.output
+
+
+def test_show_walk_forward_report_displays_walk_forward_section(tmp_path: Path) -> None:
+    report_path = _write_wf_report(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Train window: 60" in result.output
+    assert "Test window: 20" in result.output
+    assert "Step: 20" in result.output
+    assert "Windows: 3" in result.output
+
+
+def test_show_walk_forward_report_displays_strategy_section(tmp_path: Path) -> None:
+    report_path = _write_wf_report(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Strategy ID: rsi_baseline" in result.output
+    assert "Asset: BTC/USDT" in result.output
+    assert "Timeframe: 1h" in result.output
+
+
+def test_show_walk_forward_report_displays_summary_section(tmp_path: Path) -> None:
+    report_path = _write_wf_report(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Windows with trades: 2" in result.output
+    assert "Total trades: 7" in result.output
+
+
+def test_show_walk_forward_report_displays_results(tmp_path: Path) -> None:
+    report_path = _write_wf_report(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Window 0" in result.output
+    assert "Window 1" in result.output
+    assert "Test start:" in result.output
+    assert "Test end:" in result.output
+    assert "Test rows: 20" in result.output
+    assert "Closed trades:" in result.output
+    assert "Total net PnL:" in result.output
+    assert "Total return:" in result.output
+    assert "Max drawdown:" in result.output
+    assert "Profit factor:" in result.output
+    assert "Expectancy:" in result.output
+
+
+def test_show_walk_forward_report_partial_report_accepted(tmp_path: Path) -> None:
+    partial = {"walk_forward": {"train_window": 60, "test_window": 20}}
+    report_path = _write_wf_report(tmp_path, partial)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Train window: 60" in result.output
+
+
+def test_show_walk_forward_report_missing_file(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(tmp_path / "missing.json")])
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower() or "not found" in (result.stderr or "").lower()
+
+
+def test_show_walk_forward_report_invalid_json(tmp_path: Path) -> None:
+    report_path = tmp_path / "bad.json"
+    report_path.write_text("not valid json {{{", encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 1
+
+
+def test_show_walk_forward_report_non_dict_root(tmp_path: Path) -> None:
+    report_path = tmp_path / "list.json"
+    report_path.write_text("[1, 2, 3]", encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 1
+
+
+def test_show_walk_forward_report_no_recalculation(tmp_path: Path, monkeypatch) -> None:
+    import trading_agent.cli as cli_module
+    called = []
+
+    def fake_run_backtest(*args, **kwargs):
+        called.append(True)
+        return {"trades": [], "initial_balance": 1000.0}
+
+    monkeypatch.setattr(cli_module, "run_backtest", fake_run_backtest, raising=False)
+    report_path = _write_wf_report(tmp_path)
+    runner = CliRunner()
+    runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert called == [], "run_backtest should not be called by show-walk-forward-report"
+
+
+def test_show_walk_forward_report_no_write_to_outputs(tmp_path: Path) -> None:
+    outputs_dir = tmp_path / "outputs"
+    outputs_dir.mkdir()
+    report_path = outputs_dir / "walk_forward_report.json"
+    report_path.write_text(json.dumps(_SAMPLE_WF_REPORT), encoding="utf-8")
+    before = set(outputs_dir.iterdir())
+    runner = CliRunner()
+    runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    after = set(outputs_dir.iterdir())
+    assert before == after
+
+
+def test_show_walk_forward_report_no_write_to_state(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    before = set(state_dir.iterdir())
+    report_path = _write_wf_report(tmp_path)
+    runner = CliRunner()
+    runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    after = set(state_dir.iterdir())
+    assert before == after
+
+
+def test_show_walk_forward_report_no_forbidden_keys(tmp_path: Path) -> None:
+    report_path = _write_wf_report(tmp_path)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    for forbidden in ["best_strategy", "best_asset", "winner", "rank", "ranking",
+                      "global_score", "selected_strategy"]:
+        assert forbidden not in result.output, f"Forbidden key found in output: {forbidden}"
+
+
+def test_show_wf_report_walk_forward_non_dict(tmp_path: Path) -> None:
+    report = {"walk_forward": "not_a_dict", "strategy": {}, "summary": {}, "results": []}
+    report_path = _write_wf_report(tmp_path, report)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+
+
+def test_show_wf_report_strategy_or_summary_non_dict(tmp_path: Path) -> None:
+    report = {"walk_forward": {}, "strategy": 42, "summary": "bad", "results": []}
+    report_path = _write_wf_report(tmp_path, report)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+
+
+def test_show_wf_report_results_entry_non_dict(tmp_path: Path) -> None:
+    valid_entry = {
+        "window_index": 0,
+        "test_start": "2024-03-01",
+        "test_end": "2024-04-01",
+        "test_rows": 10,
+        "summary": {"closed_trades": 2},
+    }
+    report = {"results": ["bad_entry", valid_entry]}
+    report_path = _write_wf_report(tmp_path, report)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Window 0" in result.output
+
+
+def test_show_wf_report_window_summary_non_dict(tmp_path: Path) -> None:
+    report = {
+        "results": [
+            {"window_index": 5, "test_start": "2024-03-01", "summary": "oops"},
+        ]
+    }
+    report_path = _write_wf_report(tmp_path, report)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Window 5" in result.output
