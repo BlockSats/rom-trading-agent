@@ -5,9 +5,12 @@ from pathlib import Path
 
 import pandas as pd
 
+import copy
+import json
+
 from trading_agent.data import generate_sample_ohlcv
 from trading_agent.walk_forward import split_walk_forward_windows
-from trading_agent.walk_forward_report import build_walk_forward_report
+from trading_agent.walk_forward_report import build_walk_forward_report, save_walk_forward_report
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -238,3 +241,67 @@ def test_each_result_has_summary_with_required_keys() -> None:
                 "sharpe_like", "score", "winrate", "profit_factor", "expectancy"}
     for r in report["results"]:
         assert required <= r["summary"].keys()
+
+
+# ---------------------------------------------------------------------------
+# Tests save_walk_forward_report
+# ---------------------------------------------------------------------------
+
+
+def _make_report() -> dict:
+    return build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+
+
+def test_save_writes_json_file(tmp_path: Path) -> None:
+    out = tmp_path / "report.json"
+    save_walk_forward_report(_make_report(), out)
+    assert out.exists()
+
+
+def test_save_content_matches_report(tmp_path: Path) -> None:
+    report = _make_report()
+    out = tmp_path / "report.json"
+    save_walk_forward_report(report, out)
+    with out.open(encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    assert loaded == report
+
+
+def test_save_creates_parent_dir(tmp_path: Path) -> None:
+    out = tmp_path / "sub" / "nested" / "report.json"
+    save_walk_forward_report(_make_report(), out)
+    assert out.exists()
+
+
+def test_save_returns_path(tmp_path: Path) -> None:
+    out = tmp_path / "report.json"
+    result = save_walk_forward_report(_make_report(), out)
+    assert result == out
+
+
+def test_save_does_not_mutate_report(tmp_path: Path) -> None:
+    report = _make_report()
+    before = copy.deepcopy(report)
+    save_walk_forward_report(report, tmp_path / "report.json")
+    assert report == before
+
+
+def test_save_does_not_write_to_state(tmp_path: Path) -> None:
+    state_dir = Path(__file__).parents[1] / "state"
+    before = set(state_dir.iterdir()) if state_dir.exists() else set()
+    save_walk_forward_report(_make_report(), tmp_path / "report.json")
+    after = set(state_dir.iterdir()) if state_dir.exists() else set()
+    assert before == after
+
+
+def test_save_no_forbidden_keys_in_file(tmp_path: Path) -> None:
+    out = tmp_path / "report.json"
+    save_walk_forward_report(_make_report(), out)
+    with out.open(encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    all_keys = _collect_keys(loaded)
+    assert all_keys.isdisjoint(_FORBIDDEN_KEYS), (
+        f"Forbidden keys found: {all_keys & _FORBIDDEN_KEYS}"
+    )
