@@ -14,3 +14,5 @@ outputs/
 *.egg-info/
 
 data/*.csv
+
+state/prospective_reserve.jsonl

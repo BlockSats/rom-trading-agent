@@ -19,8 +19,10 @@ data_roles:
   - "paper_forward"
 
 holdout_budget_policy:
-  operational_registry_enabled: false
-  registry_deferred_to_phase: "v0.46"
+  operational_registry_enabled: true
+  registry_deferred_to_phase: null
+  registry_path: "state/prospective_reserve.jsonl"
+  reserve_directory: "data/prospective_reserve"
   allowed_future_statuses:
     - "reserved"
     - "accumulating"

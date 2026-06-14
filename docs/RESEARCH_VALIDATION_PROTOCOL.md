@@ -93,7 +93,7 @@ Le protocole devra tenir à jour un registre qui compte :
 | `contaminated` | Période exposée à une modification substantielle post-réservation |
 | `retired` | Période retirée pour raison structurelle (données manquantes, exchange arrêté, etc.) |
 
-Le registre opérationnel est reporté à la phase v0.46. Aucune entrée réelle de dataset n'est créée en v0.45. Aucune date de holdout n'est choisie.
+Le registre opérationnel append-only est introduit en phase v0.46. Il enregistre des événements opérationnels de type `prospective_batch_archived` au format JSONL. La clé `datasets: []` présente dans `validation_policy.yaml` reste une configuration statique distincte du registre dynamique. L'archivage d'un lot dans la réserve prospective ne constitue ni l'ouverture d'un holdout ni le début d'un paper-forward. Le champ `independence_claimed: false` figurant dans chaque enregistrement empêche toute affirmation abusive d'indépendance statistique. Aucune date de holdout n'est choisie.
 
 ---
 
