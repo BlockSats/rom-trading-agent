@@ -1549,3 +1549,71 @@ def test_show_wf_report_window_summary_non_dict(tmp_path: Path) -> None:
     result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
     assert result.exit_code == 0, result.output
     assert "Window 5" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Tests v0.47 — validation_context dans le viewer CLI
+# ---------------------------------------------------------------------------
+
+_SAMPLE_WF_REPORT_WITH_VC = {
+    **_SAMPLE_WF_REPORT,
+    "validation_context": {
+        "mode": "exploratory_walk_forward",
+        "data_role": "exploratory_data",
+        "confirmatory_holdout_used": False,
+        "prospective_holdout_used": False,
+        "paper_forward_used": False,
+        "parameter_optimization_performed": False,
+        "selection_performed": False,
+    },
+}
+
+
+def test_show_wf_report_displays_validation_context(tmp_path: Path) -> None:
+    report_path = _write_wf_report(tmp_path, _SAMPLE_WF_REPORT_WITH_VC)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Validation context" in result.output
+    assert "Mode: exploratory_walk_forward" in result.output
+    assert "Data role: exploratory_data" in result.output
+    assert "Confirmatory holdout used: False" in result.output
+    assert "Paper-forward used: False" in result.output
+    assert "Parameter optimization performed: False" in result.output
+    assert "Selection performed: False" in result.output
+
+
+def test_show_wf_report_legacy_report_readable(tmp_path: Path) -> None:
+    """Un ancien rapport sans validation_context reste lisible sans erreur."""
+    report_path = _write_wf_report(tmp_path, _SAMPLE_WF_REPORT)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    assert "Walk-forward report" in result.output
+
+
+def test_show_wf_report_no_write_with_validation_context(tmp_path: Path) -> None:
+    outputs_dir = tmp_path / "outputs"
+    outputs_dir.mkdir()
+    report_path = outputs_dir / "walk_forward_report.json"
+    report_path.write_text(
+        json.dumps(_SAMPLE_WF_REPORT_WITH_VC), encoding="utf-8"
+    )
+    before = set(outputs_dir.iterdir())
+    runner = CliRunner()
+    runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    after = set(outputs_dir.iterdir())
+    assert before == after
+
+
+def test_show_wf_report_no_forbidden_keys_in_output_with_vc(tmp_path: Path) -> None:
+    report_path = _write_wf_report(tmp_path, _SAMPLE_WF_REPORT_WITH_VC)
+    runner = CliRunner()
+    result = runner.invoke(app, ["show-walk-forward-report", "--path", str(report_path)])
+    assert result.exit_code == 0, result.output
+    forbidden = {
+        "best_strategy", "best_asset", "winner", "rank", "ranking",
+        "global_score", "selected_strategy", "promotion", "auto_selection",
+    }
+    for key in forbidden:
+        assert key not in result.output, f"Champ interdit trouvé dans l'output : {key}"

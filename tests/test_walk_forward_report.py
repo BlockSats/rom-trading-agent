@@ -8,7 +8,9 @@ import pandas as pd
 import copy
 import json
 
+from trading_agent.backtest import run_backtest, summarize_backtest
 from trading_agent.data import generate_sample_ohlcv
+from trading_agent.scoring import score_trades
 from trading_agent.walk_forward import split_walk_forward_windows
 from trading_agent.walk_forward_report import build_walk_forward_report, save_walk_forward_report
 
@@ -305,3 +307,167 @@ def test_save_no_forbidden_keys_in_file(tmp_path: Path) -> None:
     assert all_keys.isdisjoint(_FORBIDDEN_KEYS), (
         f"Forbidden keys found: {all_keys & _FORBIDDEN_KEYS}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests v0.47 — validation_context et rôles de fenêtres
+# ---------------------------------------------------------------------------
+
+
+def test_validation_context_present() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    assert "validation_context" in report
+
+
+def test_validation_context_mode() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    assert report["validation_context"]["mode"] == "exploratory_walk_forward"
+
+
+def test_validation_context_data_role() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    assert report["validation_context"]["data_role"] == "exploratory_data"
+
+
+def test_validation_context_confirmatory_holdout_used_false() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    assert report["validation_context"]["confirmatory_holdout_used"] is False
+
+
+def test_validation_context_prospective_holdout_used_false() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    assert report["validation_context"]["prospective_holdout_used"] is False
+
+
+def test_validation_context_paper_forward_used_false() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    assert report["validation_context"]["paper_forward_used"] is False
+
+
+def test_validation_context_parameter_optimization_false() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    assert report["validation_context"]["parameter_optimization_performed"] is False
+
+
+def test_validation_context_selection_performed_false() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    assert report["validation_context"]["selection_performed"] is False
+
+
+def test_results_train_role_present() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    for r in report["results"]:
+        assert "train_role" in r
+        assert r["train_role"] == "historical_context"
+
+
+def test_results_test_role_present() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    for r in report["results"]:
+        assert "test_role" in r
+        assert r["test_role"] == "walk_forward_oos"
+
+
+def test_results_test_is_out_of_sample_true() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    for r in report["results"]:
+        assert r["test_is_out_of_sample"] is True
+
+
+def test_results_test_is_confirmatory_holdout_false() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    for r in report["results"]:
+        assert r["test_is_confirmatory_holdout"] is False
+
+
+def test_results_test_is_paper_forward_false() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    for r in report["results"]:
+        assert r["test_is_paper_forward"] is False
+
+
+def test_results_train_used_for_parameter_optimization_false() -> None:
+    report = build_walk_forward_report(
+        _make_df(), _make_strategy(), _make_goal(), _TRAIN, _TEST, _STEP
+    )
+    for r in report["results"]:
+        assert r["train_used_for_parameter_optimization"] is False
+
+
+def test_numeric_results_unchanged() -> None:
+    """Les champs descriptifs n'altèrent pas les valeurs calculées par les fonctions sous-jacentes."""
+    df = _make_df()
+    strategy = _make_strategy()
+    goal = _make_goal()
+
+    report = build_walk_forward_report(df, strategy, goal, _TRAIN, _TEST, _STEP)
+    windows = split_walk_forward_windows(df, _TRAIN, _TEST, _STEP)
+
+    for w in windows:
+        backtest_result = run_backtest(w.test, strategy)
+        trades = backtest_result["trades"]
+        score_result = score_trades(trades, goal)
+        expected_summary = summarize_backtest(trades, score_result)
+        expected_summary["winrate"] = score_result["winrate"]
+        expected_summary["profit_factor"] = score_result["profit_factor"]
+        expected_summary["expectancy"] = score_result["expectancy"]
+
+        assert report["results"][w.index]["summary"] == expected_summary
+
+    total_trades = sum(r["summary"]["closed_trades"] for r in report["results"])
+    windows_with_trades = sum(
+        1 for r in report["results"] if r["summary"]["closed_trades"] > 0
+    )
+    assert report["summary"]["windows"] == len(windows)
+    assert report["summary"]["total_trades"] == total_trades
+    assert report["summary"]["windows_with_trades"] == windows_with_trades
+
+
+def test_save_preserves_validation_context(tmp_path: Path) -> None:
+    report = _make_report()
+    out = tmp_path / "report.json"
+    save_walk_forward_report(report, out)
+    with out.open(encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    assert "validation_context" in loaded
+    vc = loaded["validation_context"]
+    assert vc["mode"] == "exploratory_walk_forward"
+    assert vc["data_role"] == "exploratory_data"
+    assert vc["confirmatory_holdout_used"] is False
+    assert vc["prospective_holdout_used"] is False
+    assert vc["paper_forward_used"] is False
+    assert vc["parameter_optimization_performed"] is False
+    assert vc["selection_performed"] is False
+    for r in loaded["results"]:
+        assert r["train_role"] == "historical_context"
+        assert r["test_role"] == "walk_forward_oos"
+        assert r["test_is_out_of_sample"] is True
+        assert r["test_is_confirmatory_holdout"] is False
+        assert r["test_is_paper_forward"] is False
+        assert r["train_used_for_parameter_optimization"] is False
