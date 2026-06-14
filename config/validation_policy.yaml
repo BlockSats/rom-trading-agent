@@ -1,0 +1,71 @@
+protocol:
+  schema_version: 1
+  policy_version: "0.1-draft"
+  status: "draft"
+  frozen_at: null
+  protocol_hash: null
+  numeric_thresholds_frozen: false
+
+decision_statuses:
+  - "not_evaluable"
+  - "exploratory_only"
+  - "fails_current_protocol"
+  - "eligible_for_extended_paper_validation"
+
+data_roles:
+  - "exploratory_data"
+  - "confirmatory_holdout"
+  - "prospective_holdout_candidate"
+  - "paper_forward"
+
+holdout_budget_policy:
+  operational_registry_enabled: false
+  registry_deferred_to_phase: "v0.46"
+  allowed_future_statuses:
+    - "reserved"
+    - "accumulating"
+    - "opened"
+    - "consumed"
+    - "contaminated"
+    - "retired"
+  opening_is_irreversible: true
+  consumed_data_cannot_confirm_new_protocol_version: true
+  datasets: []
+
+paper_forward:
+  enabled: false
+  evaluation_schedule: "pre_registered_checkpoints"
+  interim_results: "descriptive_only"
+  early_pass_allowed: false
+  strategy_changes_during_run: false
+  minimum_calendar_duration: null
+  minimum_observations: null
+  minimum_trades: null
+
+statistical_power:
+  enabled: false
+  target_power: null
+  significance_level: null
+  minimum_detectable_effect: null
+  observation_unit: "periodic_return"
+  dependence_method: "block_resampling"
+  insufficient_power_reason: "underpowered_for_declared_effect"
+
+statistical_diagnostics:
+  dsr:
+    enabled: false
+    applicability: "not_computed"
+  pbo:
+    enabled: false
+    applicability: "not_computed"
+  allowed_applicability_statuses:
+    - "applicable"
+    - "low_trial_count"
+    - "insufficient_oos_splits"
+    - "insufficient_return_history"
+    - "not_computed"
+
+future_conjunctive_gate:
+  enabled: false
+  numeric_thresholds: null
+  aggregation_method: "all_required_conditions"
