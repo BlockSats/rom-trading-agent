@@ -210,3 +210,31 @@ Ces valeurs sont inconnues en v0.45. Elles ne seront définies qu'après créati
 - sans notion de `best_strategy`, classement, promotion ou sélection automatique.
 
 Une absence de preuve est un résultat. Un protocole qui rejette honnêtement une stratégie faible est un protocole qui fonctionne.
+
+---
+
+## 11. Empreintes d'entrée (v0.48)
+
+Le module `trading_agent.fingerprint` expose des primitives de calcul d'empreinte SHA-256 pour les entrées d'une expérience.
+
+**Ce qu'une empreinte identifie :** les données et la configuration utilisées en entrée. Elle ne prouve ni la qualité des données, ni leur indépendance statistique, ni la rentabilité d'une stratégie.
+
+**Empreinte d'un DataFrame (`fingerprint_dataframe`) :**
+- L'index pandas est ignoré (il n'est pas une donnée métier du CSV OHLCV).
+- Les colonnes sont canonicalisées dans un ordre trié : permuter les colonnes ne change pas le hash.
+- L'ordre des lignes est conservé : permuter les lignes change le hash.
+- Les dtypes sont inclus : changer le dtype d'une colonne change le hash.
+- Les timestamps timezone-aware sont normalisés en UTC avant canonicalisation.
+- `NaN` est encodé avec le marqueur canonique `{"__special__": "nan"}` ; `+inf` et `-inf` utilisent des marqueurs distincts.
+- `pd.NA` et `pd.NaT` sont encodés comme `null`.
+- Tous les noms de colonnes doivent être des chaînes uniques.
+
+**Empreinte d'une configuration (`fingerprint_payload`) :**
+- Insensible à l'ordre des clés d'un dictionnaire.
+- Sensible aux valeurs et à l'ordre des listes.
+- Les clés de mapping doivent être des chaînes (pas de conversion silencieuse).
+- Les tuples sont canonicalisés comme des listes (comportement documenté).
+
+**Entrées regroupées (`build_input_fingerprints`) :** retourne les empreintes du DataFrame, de la stratégie, du goal et de la politique de validation dans un objet unique, sans métrique de performance ni sélection de stratégie.
+
+**Étapes futures :** le manifeste d'expérience complet (incluant les métadonnées Git et un `experiment_id`) sera introduit dans une phase séparée.
