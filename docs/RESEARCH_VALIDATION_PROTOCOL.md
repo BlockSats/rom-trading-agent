@@ -69,6 +69,18 @@ Période identifiée comme candidate à un holdout. Les données correspondantes
 
 Données produites en temps réel après gel complet de la stratégie, des paramètres, des coûts, du moteur de backtest, des métriques d'évaluation et du calendrier d'évaluation. Le paper-forward ne commence qu'après ce gel. Une donnée procéduralement non inspectée ne constitue pas un aveuglement parfait au comportement général du marché.
 
+### Distinction walk-forward OOS / holdouts
+
+**Walk-forward out-of-sample (`walk_forward_oos`)** : fenêtre test hors échantillon par rapport à la fenêtre train correspondante de la même passe. Elle reste exploratoire si la stratégie ou ses paramètres ont déjà été observés ou ajustés sur l'ensemble des données. Aucune indépendance statistique confirmatoire n'est revendiquée. Statut des rapports WFA actuels : `exploratory_data`, `mode: exploratory_walk_forward`.
+
+**Confirmatory holdout** : données réservées avant toute exploration, utilisées en lecture unique après gel numérique du protocole. Non utilisé dans les rapports WFA actuels (`confirmatory_holdout_used: false`).
+
+**Prospective holdout candidate** : données futures accumulées dans le registre `state/prospective_reserve.jsonl`, non encore ouvertes. L'ouverture est irréversible.
+
+**Paper-forward** : simulation sur données futures en temps réel, selon calendrier pré-enregistré. Non activé (`paper_forward.enabled: false` dans `validation_policy.yaml`, `paper_forward_used: false` dans les rapports WFA).
+
+Les rapports walk-forward générés par `build_walk_forward_report` portent le champ `validation_context` qui documente explicitement ces garanties pour chaque rapport produit.
+
 ---
 
 ## 4. Budget de holdout

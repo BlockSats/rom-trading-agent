@@ -1295,6 +1295,21 @@ def show_walk_forward_report(
             if key in sm:
                 typer.echo(f"    {label}: {sm[key]}")
 
+    vc = payload.get("validation_context")
+    if isinstance(vc, dict) and vc:
+        typer.echo("  Validation context")
+        for key, label in [
+            ("mode", "Mode"),
+            ("data_role", "Data role"),
+            ("confirmatory_holdout_used", "Confirmatory holdout used"),
+            ("prospective_holdout_used", "Prospective holdout used"),
+            ("paper_forward_used", "Paper-forward used"),
+            ("parameter_optimization_performed", "Parameter optimization performed"),
+            ("selection_performed", "Selection performed"),
+        ]:
+            if key in vc:
+                typer.echo(f"    {label}: {vc[key]}")
+
     results = payload.get("results")
     if isinstance(results, list):
         typer.echo("  Results")

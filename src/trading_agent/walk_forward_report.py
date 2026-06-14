@@ -66,6 +66,12 @@ def build_walk_forward_report(
                 "test_start": str(w.test_start),
                 "test_end": str(w.test_end),
                 "test_rows": len(w.test),
+                "train_role": "historical_context",
+                "test_role": "walk_forward_oos",
+                "test_is_out_of_sample": True,
+                "test_is_confirmatory_holdout": False,
+                "test_is_paper_forward": False,
+                "train_used_for_parameter_optimization": False,
                 "summary": summary,
             }
         )
@@ -84,6 +90,15 @@ def build_walk_forward_report(
             "strategy_id": strategy.get("strategy_id", strategy.get("entry", {}).get("indicator", "")),
             "asset": strategy.get("asset", ""),
             "timeframe": strategy.get("timeframe", ""),
+        },
+        "validation_context": {
+            "mode": "exploratory_walk_forward",
+            "data_role": "exploratory_data",
+            "confirmatory_holdout_used": False,
+            "prospective_holdout_used": False,
+            "paper_forward_used": False,
+            "parameter_optimization_performed": False,
+            "selection_performed": False,
         },
         "results": results,
         "summary": {
