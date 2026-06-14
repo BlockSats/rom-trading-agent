@@ -25,6 +25,13 @@ from trading_agent.reflection import apply_reflection_proposal, propose_one_chan
 from trading_agent.research_reflection import build_research_reflection_report
 from trading_agent.research_robustness import build_research_robustness_report
 from trading_agent.scoring import score_trades
+from trading_agent.prospective_reserve import (
+    archive_prospective_csv as _do_archive_prospective_csv,
+    DuplicateBatchError,
+    InvalidMetadataError,
+    InvalidOHLCVError,
+    ReserveFileExistsError,
+)
 from trading_agent.storage import (
     append_jsonl,
     ensure_state_files,
@@ -1513,6 +1520,75 @@ def reflect() -> None:
             "new_version": updated_strategy["version"],
         }
     )
+
+
+@app.command("archive-prospective-csv")
+def archive_prospective_csv(
+    path: Path,
+    asset: str = typer.Option(..., "--asset", help="Asset identifier, e.g. BTCUSDT."),
+    timeframe: str = typer.Option(..., "--timeframe", help="Timeframe, e.g. 1h."),
+    source: str = typer.Option(..., "--source", help="Data source identifier, e.g. binance-public."),
+    reserve_dir: Path = typer.Option(
+        Path("data/prospective_reserve"),
+        "--reserve-dir",
+        help="Directory where archived CSV files are stored.",
+    ),
+    registry_path: Path = typer.Option(
+        Path("state/prospective_reserve.jsonl"),
+        "--registry-path",
+        help="Path to the prospective reserve JSONL registry.",
+    ),
+) -> None:
+    """Archive a local OHLCV CSV to the prospective data reserve."""
+    try:
+        record = _do_archive_prospective_csv(
+            path=path,
+            asset=asset,
+            timeframe=timeframe,
+            source=source,
+            reserve_dir=reserve_dir,
+            registry_path=registry_path,
+        )
+    except InvalidMetadataError as exc:
+        echo_json({
+            "command": "archive-prospective-csv",
+            "status": "failed",
+            "reason": "invalid_metadata",
+            "detail": str(exc),
+        })
+        raise typer.Exit(code=1)
+    except DuplicateBatchError as exc:
+        echo_json({
+            "command": "archive-prospective-csv",
+            "status": "failed",
+            "reason": "duplicate_batch",
+            "detail": str(exc),
+        })
+        raise typer.Exit(code=1)
+    except ReserveFileExistsError as exc:
+        echo_json({
+            "command": "archive-prospective-csv",
+            "status": "failed",
+            "reason": "reserve_file_exists",
+            "detail": str(exc),
+        })
+        raise typer.Exit(code=1)
+    except InvalidOHLCVError as exc:
+        echo_json({
+            "command": "archive-prospective-csv",
+            "status": "failed",
+            "reason": "invalid_ohlcv",
+            "detail": str(exc),
+        })
+        raise typer.Exit(code=1)
+
+    echo_json({
+        "command": "archive-prospective-csv",
+        "status": "completed",
+        "registry_path": str(registry_path),
+        "stored_path": str(record["stored_path"]),
+        "batch": record,
+    })
 
 
 if __name__ == "__main__":

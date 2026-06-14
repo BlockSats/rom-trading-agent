@@ -83,6 +83,22 @@ def test_datasets_est_liste_vide(policy):
     assert policy["holdout_budget_policy"]["datasets"] == []
 
 
+def test_operational_registry_enabled_est_true(policy):
+    assert policy["holdout_budget_policy"]["operational_registry_enabled"] is True
+
+
+def test_registry_deferred_to_phase_est_none(policy):
+    assert policy["holdout_budget_policy"]["registry_deferred_to_phase"] is None
+
+
+def test_registry_path_present(policy):
+    assert policy["holdout_budget_policy"]["registry_path"] == "state/prospective_reserve.jsonl"
+
+
+def test_reserve_directory_present(policy):
+    assert policy["holdout_budget_policy"]["reserve_directory"] == "data/prospective_reserve"
+
+
 def test_ouverture_holdout_irreversible(policy):
     assert policy["holdout_budget_policy"]["opening_is_irreversible"] is True
 
