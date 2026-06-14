@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from trading_agent.backtest import run_backtest, summarize_backtest
 from trading_agent.scoring import score_trades
+from trading_agent.storage import write_json
 from trading_agent.walk_forward import split_walk_forward_windows
 
 
@@ -90,3 +92,12 @@ def build_walk_forward_report(
             "total_trades": total_trades,
         },
     }
+
+
+def save_walk_forward_report(
+    report: dict[str, Any],
+    output_path: Path | str = Path("outputs/walk_forward_report.json"),
+) -> Path:
+    path = Path(output_path)
+    write_json(path, report)
+    return path
