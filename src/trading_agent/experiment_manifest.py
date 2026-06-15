@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -11,6 +12,7 @@ from trading_agent.fingerprint import (
     canonicalize_for_fingerprint,
     fingerprint_payload,
 )
+from trading_agent.storage import write_json
 
 EXPERIMENT_MANIFEST_SCHEMA_VERSION = 1
 
@@ -159,3 +161,16 @@ def build_experiment_manifest(
         "validation_context": val_ctx_canonical,
         "input_fingerprints": input_fingerprints,
     }
+
+
+def save_experiment_manifest(
+    manifest: Mapping[str, Any],
+    output_path: Path | str = Path("outputs/experiment_manifest.json"),
+) -> Path:
+    if not isinstance(manifest, Mapping):
+        raise TypeError(
+            f"manifest must be a Mapping, got {type(manifest).__name__!r}"
+        )
+    path = Path(output_path)
+    write_json(path, dict(manifest))
+    return path

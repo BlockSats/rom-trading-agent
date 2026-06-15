@@ -10,8 +10,11 @@ Organisation :
 """
 from __future__ import annotations
 
+from copy import deepcopy
+import json
 import re
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -20,6 +23,7 @@ from trading_agent.experiment_manifest import (
     EXPERIMENT_MANIFEST_SCHEMA_VERSION,
     VALID_DATA_ROLES,
     build_experiment_manifest,
+    save_experiment_manifest,
 )
 
 # ---------------------------------------------------------------------------
@@ -31,6 +35,18 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 def _is_sha256(value: str) -> bool:
     return bool(SHA256_RE.match(value))
+
+
+def _has_forbidden_key(obj: object) -> bool:
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in FORBIDDEN_KEYS:
+                return True
+            if _has_forbidden_key(v):
+                return True
+    elif isinstance(obj, (list, tuple)):
+        return any(_has_forbidden_key(item) for item in obj)
+    return False
 
 
 def _simple_df() -> pd.DataFrame:
@@ -384,3 +400,125 @@ def test_f4_forbidden_key_nested_in_validation_context_rejected():
                 "meta": {"best_strategy": "sma"},
             }
         ))
+
+
+# ---------------------------------------------------------------------------
+# Section G — save_experiment_manifest
+# ---------------------------------------------------------------------------
+
+def test_g1_writes_json_file(tmp_path: Path) -> None:
+    manifest = build_experiment_manifest(**_base_kwargs())
+    out = tmp_path / "manifest.json"
+    save_experiment_manifest(manifest, out)
+    assert out.exists()
+
+
+def test_g2_content_matches_manifest(tmp_path: Path) -> None:
+    manifest = build_experiment_manifest(**_base_kwargs())
+    out = tmp_path / "manifest.json"
+    save_experiment_manifest(manifest, out)
+    with out.open(encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    assert loaded == manifest
+
+
+def test_g3_returns_path_equal_to_output_path(tmp_path: Path) -> None:
+    manifest = build_experiment_manifest(**_base_kwargs())
+    out = tmp_path / "manifest.json"
+    result = save_experiment_manifest(manifest, out)
+    assert result == out
+
+
+def test_g4_default_output_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    manifest = build_experiment_manifest(**_base_kwargs())
+    result = save_experiment_manifest(manifest)
+    assert result == Path("outputs/experiment_manifest.json")
+    assert (tmp_path / "outputs" / "experiment_manifest.json").exists()
+
+
+def test_g5_creates_parent_directories(tmp_path: Path) -> None:
+    manifest = build_experiment_manifest(**_base_kwargs())
+    out = tmp_path / "nested" / "deep" / "manifest.json"
+    save_experiment_manifest(manifest, out)
+    assert out.exists()
+
+
+def test_g6_custom_output_path(tmp_path: Path) -> None:
+    manifest = build_experiment_manifest(**_base_kwargs())
+    out = tmp_path / "custom_manifest.json"
+    result = save_experiment_manifest(manifest, out)
+    assert result == out
+    assert out.exists()
+
+
+def test_g7_manifest_source_not_mutated(tmp_path: Path) -> None:
+    manifest = build_experiment_manifest(**_base_kwargs())
+    before = deepcopy(manifest)
+    out = tmp_path / "manifest.json"
+    save_experiment_manifest(manifest, out)
+    assert manifest == before
+
+
+def test_g8_experiment_id_not_recalculated(tmp_path: Path) -> None:
+    manifest = build_experiment_manifest(**_base_kwargs())
+    original_id = manifest["experiment_id"]
+    out = tmp_path / "manifest.json"
+    save_experiment_manifest(manifest, out)
+    with out.open(encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    assert loaded["experiment_id"] == original_id
+
+
+def test_g9_created_at_preserved(tmp_path: Path) -> None:
+    manifest = build_experiment_manifest(**_base_kwargs())
+    original_created_at = manifest["created_at"]
+    out = tmp_path / "manifest.json"
+    save_experiment_manifest(manifest, out)
+    with out.open(encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    assert loaded["created_at"] == original_created_at
+
+
+def test_g10_non_mapping_rejected() -> None:
+    with pytest.raises(TypeError, match="Mapping"):
+        save_experiment_manifest("not a mapping")  # type: ignore[arg-type]
+
+
+def test_g11_no_write_to_state_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    manifest = build_experiment_manifest(**_base_kwargs())
+    out = tmp_path / "manifest.json"
+    save_experiment_manifest(manifest, out)
+    assert not (tmp_path / "state" / "trades.jsonl").exists()
+
+
+def test_g12_no_write_to_state_hypotheses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    manifest = build_experiment_manifest(**_base_kwargs())
+    out = tmp_path / "manifest.json"
+    save_experiment_manifest(manifest, out)
+    assert not (tmp_path / "state" / "hypotheses.jsonl").exists()
+
+
+def test_g13_no_build_called(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _must_not_be_called(*args, **kwargs):
+        raise AssertionError("build_experiment_manifest must not be called by save_experiment_manifest")
+
+    monkeypatch.setattr(
+        "trading_agent.experiment_manifest.build_experiment_manifest",
+        _must_not_be_called,
+    )
+    manifest = {"experiment_id": "abc123", "created_at": "2024-01-15T00:00:00Z"}
+    out = tmp_path / "manifest.json"
+    result = save_experiment_manifest(manifest, out)
+    assert result == out
+
+
+def test_g14_no_forbidden_keys_in_saved_manifest(tmp_path: Path) -> None:
+    manifest = build_experiment_manifest(**_base_kwargs())
+    out = tmp_path / "manifest.json"
+    save_experiment_manifest(manifest, out)
+    with out.open(encoding="utf-8") as fh:
+        loaded = json.load(fh)
+    assert not _has_forbidden_key(loaded)
